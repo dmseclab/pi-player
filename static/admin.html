@@ -78,7 +78,16 @@
                 <label for="link-url">URL</label>
                 <input id="link-url" type="url" placeholder="https://example.com" required>
               </div>
-              <button class="primary" type="submit">Add Link</button>
+              <div class="toolbar">
+                <div class="form-row">
+                  <label for="link-display-mode">Display mode</label>
+                  <select id="link-display-mode">
+                    <option value="embed" selected>Embed</option>
+                    <option value="direct">Direct</option>
+                  </select>
+                </div>
+                <button class="primary" type="submit">Add Link</button>
+              </div>
             </form>
           </div>
           <div class="panel">
