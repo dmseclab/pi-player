@@ -32,6 +32,10 @@ exec "$BROWSER" \
   --noerrdialogs \
   --disable-infobars \
   --disable-session-crashed-bubble \
+  --disable-popup-blocking \
+  --disable-background-networking \
+  --disable-component-update \
+  --disable-sync \
   --no-first-run \
   --start-maximized \
   --ozone-platform=wayland \
