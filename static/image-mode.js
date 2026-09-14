@@ -71,13 +71,21 @@
     const modeSelect = row?.querySelector("[data-asset-edit-image-mode]");
     if (!row || !nameInput || !modeSelect) return;
 
-    await api(`/api/assets/${asset.id}`, {
+    const response = await fetch(`/api/assets/${asset.id}/image-settings`, {
       method: "PUT",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: nameInput.value.trim(),
         display_mode: normalizeMode(modeSelect.value),
       }),
     });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      alert(data.detail || "Failed to save image display mode");
+      return;
+    }
 
     state.editingAssetId = null;
     await Promise.all([loadAssets(), loadPlaylists(), loadStatus()]);
