@@ -1,6 +1,6 @@
 (() => {
   function isLoopback(value) {
-    return value === "127.0.0.1" || value === "::1" || value === "localhost";
+    return value === "localhost" || value === "::1" || /^127\./.test(value);
   }
 
   function preferredAddress() {
