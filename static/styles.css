@@ -251,6 +251,80 @@ button:disabled {
   white-space: nowrap;
 }
 
+/* Playlist layout: mirror the spacing and control sizing used on Assets. */
+#tab-playlists > .panel > .toolbar:first-child {
+  align-items: end;
+}
+
+#playlist-form {
+  align-items: end;
+}
+
+#playlist-form input {
+  flex: 1 1 320px;
+  max-width: 520px;
+}
+
+#playlist-list > .panel {
+  margin-top: 16px;
+}
+
+#playlist-list > .panel > .toolbar:first-child {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  margin: -2px 0 16px;
+  padding-bottom: 12px;
+}
+
+#playlist-list > .panel > .toolbar:first-child h3 {
+  margin: 0;
+  margin-right: auto;
+}
+
+#playlist-list form[data-add-item] {
+  align-items: end;
+  background: #f8fafb;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px;
+}
+
+#playlist-list form[data-add-item] > select {
+  flex: 1 1 300px;
+  min-width: 220px;
+}
+
+#playlist-list .playlist-timer-field {
+  flex: 0 0 170px;
+  margin-bottom: 0;
+  min-width: 170px;
+}
+
+#playlist-list form[data-add-item] > button {
+  flex: 0 0 auto;
+}
+
+#playlist-list .table input[type="number"] {
+  max-width: 130px;
+  min-width: 88px;
+}
+
+#playlist-list .table td:first-child input[type="number"] {
+  max-width: 82px;
+}
+
+#playlist-list .table input[type="checkbox"] {
+  min-height: auto;
+  width: auto;
+}
+
+#playlist-list .table td,
+#playlist-list .table th {
+  vertical-align: middle;
+}
+
 .table {
   border-collapse: collapse;
   width: 100%;
@@ -390,6 +464,18 @@ button:disabled {
   }
 
   .compact-form-row {
+    width: 100%;
+  }
+
+  #playlist-list form[data-add-item] {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  #playlist-list form[data-add-item] > select,
+  #playlist-list .playlist-timer-field {
+    flex: 1 1 auto;
+    min-width: 0;
     width: 100%;
   }
 }
