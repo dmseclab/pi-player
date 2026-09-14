@@ -1,0 +1,11 @@
+.venv/
+data/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+pi-player-rk.tar.gz
+player-screenshot.png
+zabbix-screenshot.png
+player-direct-zabbix.png
