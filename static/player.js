@@ -3,13 +3,24 @@ let playlistSignature = "";
 let items = [];
 let index = 0;
 let timer = null;
+let reloadTimer = null;
 let directWindow = null;
 
 function signature(data) {
   return JSON.stringify({
     state: data.state,
     playlist: data.playlist?.id,
-    items: data.items.map((item) => [item.id, item.position, item.duration_seconds, item.enabled, item.asset_id, item.asset_url, item.asset_display_mode]),
+    items: data.items.map((item) => [
+      item.id,
+      item.position,
+      item.duration_seconds,
+      item.enabled,
+      item.asset_id,
+      item.asset_url,
+      item.asset_display_mode,
+      item.asset_zoom_percent,
+      item.asset_reload_seconds,
+    ]),
   });
 }
 
@@ -49,6 +60,11 @@ function imageObjectFit(mode) {
   return "contain";
 }
 
+function clearWebsiteReload() {
+  if (reloadTimer) clearInterval(reloadTimer);
+  reloadTimer = null;
+}
+
 function closeDirectWindow() {
   if (!directWindow) return;
   try {
@@ -62,8 +78,17 @@ function closeDirectWindow() {
   } catch (_) {}
 }
 
+function applyEmbedZoom(iframe, zoomPercent) {
+  const zoom = Math.min(200, Math.max(50, Number(zoomPercent || 100))) / 100;
+  iframe.style.transformOrigin = "top left";
+  iframe.style.transform = `scale(${zoom})`;
+  iframe.style.width = `${100 / zoom}vw`;
+  iframe.style.height = `${100 / zoom}vh`;
+}
+
 function playCurrent() {
   if (timer) clearTimeout(timer);
+  clearWebsiteReload();
   closeDirectWindow();
 
   if (!items.length) {
@@ -73,6 +98,7 @@ function playCurrent() {
 
   const item = items[index % items.length];
   const durationMs = Math.max(1, item.duration_seconds) * 1000;
+  const reloadSeconds = Math.max(0, Number(item.asset_reload_seconds || 0));
 
   if (item.asset_type === "image") {
     if (item.asset_file_present === false) {
@@ -101,13 +127,32 @@ function playCurrent() {
       try {
         directWindow.focus();
       } catch (_) {}
+      if (reloadSeconds > 0) {
+        reloadTimer = setInterval(() => {
+          try {
+            if (directWindow && !directWindow.closed) directWindow.location.href = item.asset_url;
+          } catch (error) {
+            console.warn("Unable to reload direct website", error);
+          }
+        }, reloadSeconds * 1000);
+      }
       timer = setTimeout(() => {
+        clearWebsiteReload();
         closeDirectWindow();
         advance();
       }, durationMs);
       return;
     }
-    stage.innerHTML = `<iframe src="${item.asset_url}" title="${escapeHtml(item.asset_name)}"></iframe>`;
+
+    stage.innerHTML = `<iframe id="player-web" src="${item.asset_url}" title="${escapeHtml(item.asset_name)}"></iframe>`;
+    const iframe = document.querySelector("#player-web");
+    applyEmbedZoom(iframe, item.asset_zoom_percent);
+    if (reloadSeconds > 0) {
+      reloadTimer = setInterval(() => {
+        const current = document.querySelector("#player-web");
+        if (current) current.src = item.asset_url;
+      }, reloadSeconds * 1000);
+    }
   } else {
     showMessage("Unsupported asset");
   }
@@ -122,9 +167,13 @@ function advance() {
 
 function advanceSoon() {
   if (timer) clearTimeout(timer);
+  clearWebsiteReload();
   timer = setTimeout(advance, 2000);
 }
 
-window.addEventListener("beforeunload", closeDirectWindow);
+window.addEventListener("beforeunload", () => {
+  clearWebsiteReload();
+  closeDirectWindow();
+});
 setInterval(loadPlaylist, 5000);
 loadPlaylist();
