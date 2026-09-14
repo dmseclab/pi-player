@@ -107,13 +107,13 @@ The main installer then:
 
 ## Proxy install example
 
-For a no-authentication HTTP proxy such as `172.30.1.204:8080`, export both lowercase and uppercase proxy variables before running the installer:
+If your environment requires a no-authentication HTTP proxy, export both lowercase and uppercase proxy variables before running the installer. Replace `<your_proxy_ip>` and `<proxy_port>` with values appropriate for your network:
 
 ```bash
-export http_proxy=http://172.30.1.204:8080
-export https_proxy=http://172.30.1.204:8080
-export HTTP_PROXY=http://172.30.1.204:8080
-export HTTPS_PROXY=http://172.30.1.204:8080
+export http_proxy=http://<your_proxy_ip>:<proxy_port>
+export https_proxy=http://<your_proxy_ip>:<proxy_port>
+export HTTP_PROXY=http://<your_proxy_ip>:<proxy_port>
+export HTTPS_PROXY=http://<your_proxy_ip>:<proxy_port>
 export no_proxy=127.0.0.1,localhost
 export NO_PROXY=127.0.0.1,localhost
 
