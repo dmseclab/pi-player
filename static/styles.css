@@ -352,7 +352,7 @@ button:disabled {
 }
 
 .stage img {
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .player-message {
