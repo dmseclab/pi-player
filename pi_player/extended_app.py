@@ -9,6 +9,7 @@ from typing import Annotated, Any
 from urllib.parse import urlparse
 
 from fastapi import Depends, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 
 from .config import ALLOWED_IMAGE_EXTENSIONS, ALLOWED_IMAGE_MIME_PREFIXES, ASSET_DIR, TMP_DIR
 from .db import audit, db, get_setting, now_iso
@@ -18,6 +19,11 @@ logger = logging.getLogger(__name__)
 
 IMAGE_DISPLAY_MODES = {"fit", "fill", "stretch"}
 WEBSITE_DISPLAY_MODES = {"embed", "direct"}
+
+
+class ImageSettingsRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    display_mode: str = "fit"
 
 
 def _clean_image_display_mode(value: str | None) -> str:
@@ -172,5 +178,32 @@ def update_asset_with_display_mode(
             )
 
         audit(conn, user, "asset.update", "asset", asset_id, payload.model_dump())
+        row = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
+        return _asset_response(dict(row))
+
+
+@app.put("/api/assets/{asset_id}/image-settings")
+def update_image_settings(
+    asset_id: str,
+    payload: ImageSettingsRequest,
+    user: Annotated[str, Depends(require_user)],
+) -> dict[str, Any]:
+    mode = _clean_image_display_mode(payload.display_mode)
+    with db() as conn:
+        asset = _ensure_asset(conn, asset_id)
+        if asset["type"] != "image":
+            raise HTTPException(status_code=400, detail="Image settings can only be applied to image assets")
+        conn.execute(
+            "UPDATE assets SET name = ?, display_mode = ?, updated_at = ? WHERE id = ?",
+            (payload.name.strip(), mode, now_iso(), asset_id),
+        )
+        audit(
+            conn,
+            user,
+            "asset.image_settings_update",
+            "asset",
+            asset_id,
+            {"name": payload.name.strip(), "display_mode": mode},
+        )
         row = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
         return _asset_response(dict(row))
