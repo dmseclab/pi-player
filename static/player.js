@@ -42,21 +42,31 @@ function escapeHtml(value) {
   }[char]));
 }
 
+function imageObjectFit(mode) {
+  if (mode === "fill") return "cover";
+  if (mode === "stretch") return "fill";
+  return "contain";
+}
+
 function playCurrent() {
   if (timer) clearTimeout(timer);
   if (!items.length) {
     showMessage("No active playlist items");
     return;
   }
+
   const item = items[index % items.length];
+
   if (item.asset_type === "image") {
     if (item.asset_file_present === false) {
       console.error("Skipping missing local asset", item.asset_id, item.asset_name);
       advanceSoon();
       return;
     }
+
     stage.innerHTML = `<img id="player-image" src="${item.media_url}" alt="${escapeHtml(item.asset_name)}">`;
     const image = document.querySelector("#player-image");
+    image.style.objectFit = imageObjectFit(item.asset_display_mode);
     image.addEventListener("error", () => {
       console.error("Image failed to load", item.asset_id, item.asset_name);
       advanceSoon();
@@ -71,6 +81,7 @@ function playCurrent() {
   } else {
     showMessage("Unsupported asset");
   }
+
   timer = setTimeout(advance, Math.max(1, item.duration_seconds) * 1000);
 }
 
