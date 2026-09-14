@@ -19,15 +19,28 @@
       if (label !== "IP addresses") continue;
       const value = block.querySelector(".muted");
       if (!value) continue;
-      const current = value.textContent.split(",").map((item) => item.trim()).filter(Boolean);
+
+      const current = value.textContent
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
       const nonLoopback = current.filter((item) => !isLoopback(item));
-      value.textContent = nonLoopback.length ? nonLoopback.join(", ") : preferred;
+      const nextValue = nonLoopback.length ? nonLoopback.join(", ") : preferred;
+
+      if (value.textContent.trim() !== nextValue) {
+        value.textContent = nextValue;
+      }
     }
   }
 
-  const observer = new MutationObserver(fixStatusAddress);
   const status = document.querySelector("#status-content");
-  if (status) observer.observe(status, { childList: true, subtree: true });
+  if (status) {
+    const observer = new MutationObserver(() => {
+      requestAnimationFrame(fixStatusAddress);
+    });
+    observer.observe(status, { childList: true, subtree: true });
+  }
+
   document.addEventListener("DOMContentLoaded", fixStatusAddress);
   fixStatusAddress();
 })();
