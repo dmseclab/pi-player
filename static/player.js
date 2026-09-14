@@ -3,6 +3,7 @@ let playlistSignature = "";
 let items = [];
 let index = 0;
 let timer = null;
+let directWindow = null;
 
 function signature(data) {
   return JSON.stringify({
@@ -48,14 +49,30 @@ function imageObjectFit(mode) {
   return "contain";
 }
 
+function closeDirectWindow() {
+  if (!directWindow) return;
+  try {
+    if (!directWindow.closed) directWindow.close();
+  } catch (error) {
+    console.warn("Unable to close direct website window", error);
+  }
+  directWindow = null;
+  try {
+    window.focus();
+  } catch (_) {}
+}
+
 function playCurrent() {
   if (timer) clearTimeout(timer);
+  closeDirectWindow();
+
   if (!items.length) {
     showMessage("No active playlist items");
     return;
   }
 
   const item = items[index % items.length];
+  const durationMs = Math.max(1, item.duration_seconds) * 1000;
 
   if (item.asset_type === "image") {
     if (item.asset_file_present === false) {
@@ -74,7 +91,20 @@ function playCurrent() {
   } else if (item.asset_type === "website") {
     if (item.asset_display_mode === "direct") {
       showMessage(`Opening ${item.asset_name}...`);
-      window.location.replace(item.asset_url);
+      directWindow = window.open(item.asset_url, "pi-player-direct");
+      if (!directWindow) {
+        console.error("Direct website window was blocked", item.asset_url);
+        showMessage("Direct website could not be opened");
+        advanceSoon();
+        return;
+      }
+      try {
+        directWindow.focus();
+      } catch (_) {}
+      timer = setTimeout(() => {
+        closeDirectWindow();
+        advance();
+      }, durationMs);
       return;
     }
     stage.innerHTML = `<iframe src="${item.asset_url}" title="${escapeHtml(item.asset_name)}"></iframe>`;
@@ -82,7 +112,7 @@ function playCurrent() {
     showMessage("Unsupported asset");
   }
 
-  timer = setTimeout(advance, Math.max(1, item.duration_seconds) * 1000);
+  timer = setTimeout(advance, durationMs);
 }
 
 function advance() {
@@ -95,5 +125,6 @@ function advanceSoon() {
   timer = setTimeout(advance, 2000);
 }
 
+window.addEventListener("beforeunload", closeDirectWindow);
 setInterval(loadPlaylist, 5000);
 loadPlaylist();
