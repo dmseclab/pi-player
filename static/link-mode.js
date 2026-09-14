@@ -1,11 +1,11 @@
-// Capture the link form submission before the legacy handler so the selected
-// display mode is honored at creation time. The existing edit flow remains.
+// Capture the link form submission before the legacy handler so website
+// display options are honored at creation time.
 document.querySelector("#link-form")?.addEventListener("submit", async (event) => {
   event.preventDefault();
   event.stopImmediatePropagation();
 
   const form = event.currentTarget;
-  await api("/api/assets/link", {
+  const created = await api("/api/assets/link", {
     method: "POST",
     body: JSON.stringify({
       name: document.querySelector("#link-name").value,
@@ -14,6 +14,19 @@ document.querySelector("#link-form")?.addEventListener("submit", async (event) =
     }),
   });
 
+  await api(`/api/assets/${created.id}/website-settings`, {
+    method: "PUT",
+    body: JSON.stringify({
+      name: created.name,
+      url: created.url,
+      display_mode: created.display_mode || "embed",
+      zoom_percent: Number(document.querySelector("#link-zoom-percent")?.value || 100),
+      reload_seconds: Number(document.querySelector("#link-reload-seconds")?.value || 0),
+    }),
+  });
+
   form.reset();
+  if (document.querySelector("#link-zoom-percent")) document.querySelector("#link-zoom-percent").value = "100";
+  if (document.querySelector("#link-reload-seconds")) document.querySelector("#link-reload-seconds").value = "0";
   await Promise.all([loadAssets(), loadPlaylists(), loadStatus()]);
 }, true);
