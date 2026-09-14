@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from .config import ALLOWED_IMAGE_EXTENSIONS, ALLOWED_IMAGE_MIME_PREFIXES, ASSET_DIR, TMP_DIR
 from .db import audit, db, get_setting, now_iso
-from .main import AssetUpdateRequest, _asset_response, _ensure_asset, app, require_user
+from .main import AssetUpdateRequest, _asset_response, _ensure_asset, app, require_user, static_html
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +66,15 @@ with db() as conn:
     )
 
 
+_remove_route("/player", "GET")
 _remove_route("/api/assets/upload", "POST")
 _remove_route("/api/assets/{asset_id}", "PUT")
+
+
+@app.get("/player", response_model=None)
+def player_page():
+    """Always keep the local player controller loaded, including for Direct links."""
+    return static_html("player.html")
 
 
 @app.post("/api/assets/upload")
