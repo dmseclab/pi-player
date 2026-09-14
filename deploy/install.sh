@@ -66,7 +66,8 @@ fi
 chown -R "$APP_USER:$APP_USER" "$USER_HOME/.config"
 
 systemctl daemon-reload
-systemctl enable --now pi-player-api.service
+systemctl enable pi-player-api.service
+systemctl restart pi-player-api.service
 systemctl enable --now pi-player-health.timer
 
 echo "Installed Pi Player RK."
