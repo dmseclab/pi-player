@@ -25,7 +25,15 @@
         <section id="tab-dashboard" class="tab grid"><div class="panel"><div class="toolbar"><h2>Status</h2><button id="refresh-status">Refresh</button><button class="primary" id="start-playback">Start</button><button id="stop-playback">Stop</button><button id="restart-player">Restart Player</button></div><div id="status-content" class="grid two"></div></div></section>
         <section id="tab-assets" class="tab grid hidden">
           <div class="grid two asset-create-grid">
-            <form class="panel asset-create-panel" id="upload-form"><h2>Upload Image</h2><div class="form-row"><label for="asset-file">Image file</label><div class="file-picker"><input id="asset-file" name="file" type="file" accept="image/*" required><label class="file-picker-button" for="asset-file">Choose File</label><span id="asset-file-name" class="file-picker-name">No file chosen</span></div></div><div class="form-row"><label for="asset-name">Display name</label><input id="asset-name" name="name" placeholder="Optional"></div><div class="asset-actions"><button class="primary" type="submit">Upload</button></div></form>
+            <form class="panel asset-create-panel" id="upload-form">
+              <h2>Upload Image</h2>
+              <div class="form-row"><label for="asset-file">Image file</label><div class="file-picker"><input id="asset-file" name="file" type="file" accept="image/*" required><label class="file-picker-button" for="asset-file">Choose File</label><span id="asset-file-name" class="file-picker-name">No file chosen</span></div></div>
+              <div class="form-row"><label for="asset-name">Display name</label><input id="asset-name" name="name" placeholder="Optional"></div>
+              <div class="asset-actions">
+                <div class="form-row compact-form-row"><label for="asset-display-mode">Display mode</label><select id="asset-display-mode" name="display_mode"><option value="fit" selected>Fit</option><option value="fill">Fill</option><option value="stretch">Stretch</option></select></div>
+                <button class="primary" type="submit">Upload</button>
+              </div>
+            </form>
             <form class="panel asset-create-panel" id="link-form"><h2>Add Website Link</h2><div class="form-row"><label for="link-name">Display name</label><input id="link-name" placeholder="e.g. Company Intranet" required></div><div class="form-row"><label for="link-url">URL</label><input id="link-url" type="url" placeholder="https://example.com" required></div><div class="asset-actions link-actions"><div class="form-row compact-form-row"><label for="link-display-mode">Display mode</label><select id="link-display-mode"><option value="embed" selected>Embed</option><option value="direct">Direct</option></select></div><button class="primary" type="submit">Add Link</button></div></form>
           </div>
           <div class="panel"><div class="toolbar"><h2>Assets</h2><button id="refresh-assets">Refresh</button></div><div id="asset-list"></div></div>
@@ -39,6 +47,7 @@
   <script src="/static/admin.js"></script>
   <script src="/static/link-mode.js"></script>
   <script src="/static/upload-ui.js"></script>
+  <script src="/static/image-mode.js?v=1"></script>
   <script src="/static/status-ip.js?v=2"></script>
 </body>
 </html>
