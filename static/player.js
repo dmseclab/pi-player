@@ -116,7 +116,6 @@ function playCurrent() {
     }, { once: true });
   } else if (item.asset_type === "website") {
     if (item.asset_display_mode === "direct") {
-      showMessage(`Opening ${item.asset_name}...`);
       directWindow = window.open(item.asset_url, "pi-player-direct");
       if (!directWindow) {
         console.error("Direct website window was blocked", item.asset_url);
