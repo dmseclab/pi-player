@@ -1,0 +1,12 @@
+[Unit]
+Description=Pi Player RK asset integrity check
+After=pi-player-api.service
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+WorkingDirectory=/opt/pi-player-rk
+Environment=PI_PLAYER_DATA_DIR=/var/lib/pi-player
+Environment=PI_PLAYER_LOG_DIR=/var/log/pi-player
+ExecStart=/opt/pi-player-rk/.venv/bin/python -m pi_player.health_check

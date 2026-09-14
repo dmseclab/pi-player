@@ -1,0 +1,19 @@
+[Unit]
+Description=Pi Player RK API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=richard
+Group=richard
+WorkingDirectory=/home/richard/pi-player-rk
+Environment=PI_PLAYER_DATA_DIR=/home/richard/pi-player-rk/data
+Environment=PI_PLAYER_LOG_DIR=/home/richard/pi-player-rk/data/logs
+Environment=PI_PLAYER_SESSION_SECRET=change-this-before-production
+ExecStart=/home/richard/pi-player-rk/.venv/bin/python -m uvicorn pi_player.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
