@@ -10,37 +10,22 @@
 
   function fixStatusAddress() {
     const status = document.querySelector("#status-content");
-    if (!status) return;
     const preferred = preferredAddress();
-    if (!preferred) return;
+    if (!status || !preferred) return;
 
     for (const block of status.children) {
       const label = block.querySelector("strong")?.textContent?.trim();
       if (label !== "IP addresses") continue;
       const value = block.querySelector(".muted");
-      if (!value) continue;
-
-      const current = value.textContent
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-      const nonLoopback = current.filter((item) => !isLoopback(item));
-      const nextValue = nonLoopback.length ? nonLoopback.join(", ") : preferred;
-
-      if (value.textContent.trim() !== nextValue) {
-        value.textContent = nextValue;
-      }
+      if (value && value.textContent.trim() !== preferred) value.textContent = preferred;
     }
   }
 
   const status = document.querySelector("#status-content");
   if (status) {
-    const observer = new MutationObserver(() => {
-      requestAnimationFrame(fixStatusAddress);
-    });
-    observer.observe(status, { childList: true, subtree: true });
+    new MutationObserver(() => requestAnimationFrame(fixStatusAddress))
+      .observe(status, { childList: true });
   }
-
   document.addEventListener("DOMContentLoaded", fixStatusAddress);
   fixStatusAddress();
 })();
