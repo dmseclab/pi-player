@@ -55,31 +55,37 @@
         </section>
 
         <section id="tab-assets" class="tab grid hidden">
-          <div class="grid two">
-            <form class="panel" id="upload-form">
+          <div class="grid two asset-create-grid">
+            <form class="panel asset-create-panel" id="upload-form">
               <h2>Upload Image</h2>
               <div class="form-row">
                 <label for="asset-file">Image file</label>
-                <input id="asset-file" name="file" type="file" accept="image/*" required>
+                <div class="file-picker">
+                  <input id="asset-file" name="file" type="file" accept="image/*" required>
+                  <label class="file-picker-button" for="asset-file">Choose File</label>
+                  <span id="asset-file-name" class="file-picker-name">No file chosen</span>
+                </div>
               </div>
               <div class="form-row">
                 <label for="asset-name">Display name</label>
                 <input id="asset-name" name="name" placeholder="Optional">
               </div>
-              <button class="primary" type="submit">Upload</button>
+              <div class="asset-actions">
+                <button class="primary" type="submit">Upload</button>
+              </div>
             </form>
-            <form class="panel" id="link-form">
+            <form class="panel asset-create-panel" id="link-form">
               <h2>Add Website Link</h2>
               <div class="form-row">
                 <label for="link-name">Display name</label>
-                <input id="link-name" required>
+                <input id="link-name" placeholder="e.g. Company Intranet" required>
               </div>
               <div class="form-row">
                 <label for="link-url">URL</label>
                 <input id="link-url" type="url" placeholder="https://example.com" required>
               </div>
-              <div class="toolbar">
-                <div class="form-row">
+              <div class="asset-actions link-actions">
+                <div class="form-row compact-form-row">
                   <label for="link-display-mode">Display mode</label>
                   <select id="link-display-mode">
                     <option value="embed" selected>Embed</option>
@@ -154,5 +160,6 @@
   </div>
   <script src="/static/admin.js"></script>
   <script src="/static/link-mode.js"></script>
+  <script src="/static/upload-ui.js"></script>
 </body>
 </html>
