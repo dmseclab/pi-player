@@ -45,6 +45,22 @@ def _website_mode(value: str | None) -> str:
     return value if value in WEBSITE_DISPLAY_MODES else "embed"
 
 
+def _zoom_percent(value: Any) -> int:
+    try:
+        zoom = int(value)
+    except (TypeError, ValueError):
+        return 100
+    return min(200, max(50, zoom))
+
+
+def _reload_seconds(value: Any) -> int:
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return min(86400, max(0, seconds))
+
+
 @app.get("/api/playlists/{playlist_id}/export")
 def export_playlist(
     playlist_id: str,
@@ -93,6 +109,9 @@ def export_playlist(
                     "size_bytes": record["size_bytes"],
                     "checksum_sha256": record["checksum_sha256"],
                 }
+                if record["type"] == "website":
+                    asset["zoom_percent"] = _zoom_percent(record.get("zoom_percent"))
+                    asset["reload_seconds"] = _reload_seconds(record.get("reload_seconds"))
                 if record["type"] == "image":
                     if not record["storage_path"]:
                         raise HTTPException(status_code=409, detail=f"Image asset '{record['name']}' has no storage path")
@@ -271,10 +290,19 @@ def import_playlist(
                         conn.execute(
                             """
                             INSERT INTO assets
-                            (id, type, name, url, display_mode, created_at, updated_at)
-                            VALUES (?, 'website', ?, ?, ?, ?, ?)
+                            (id, type, name, url, display_mode, zoom_percent, reload_seconds, created_at, updated_at)
+                            VALUES (?, 'website', ?, ?, ?, ?, ?, ?, ?)
                             """,
-                            (asset_id, asset_name, url, _website_mode(asset.get("display_mode")), created, created),
+                            (
+                                asset_id,
+                                asset_name,
+                                url,
+                                _website_mode(asset.get("display_mode")),
+                                _zoom_percent(asset.get("zoom_percent")),
+                                _reload_seconds(asset.get("reload_seconds")),
+                                created,
+                                created,
+                            ),
                         )
                     else:
                         raise HTTPException(status_code=400, detail=f"Unsupported asset type: {asset_type}")
