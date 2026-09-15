@@ -12,6 +12,19 @@
     }
   }
 
+  function assetTypeForPlaylistRow(row) {
+    if (!row) return null;
+    if (row.dataset.assetType) return row.dataset.assetType;
+    const assetId = row.dataset.assetId;
+    try {
+      if (assetId) return state.assets.find((entry) => entry.id === assetId)?.type || null;
+      const name = row.children[1]?.textContent?.trim();
+      return state.assets.find((entry) => entry.name === name)?.type || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   function syncTimer(form) {
     const select = form.querySelector('select[name="asset_id"]');
     const input = form.querySelector('input[name="duration_seconds"]');
@@ -31,10 +44,6 @@
       input.setAttribute("aria-label", "Automatic video display time");
       input.setAttribute("title", "Automatic: video plays to its natural end");
       if (label) label.textContent = "Display time — Auto (video length)";
-
-      // The API still requires a duration value in the playlist item schema.
-      // Keep that compatibility value out of the UI; normal non-looping video
-      // playback advances on the video's ended event instead of this number.
       if (!hidden) {
         hidden = document.createElement("input");
         hidden.type = "hidden";
@@ -68,7 +77,6 @@
         input.dataset.timerEnhanced = "1";
         input.setAttribute("aria-label", "Display time in seconds");
         input.setAttribute("title", "How long this slide should stay on screen");
-
         const wrapper = document.createElement("div");
         wrapper.className = "form-row compact-form-row playlist-timer-field";
         const label = document.createElement("label");
@@ -86,13 +94,25 @@
     });
 
     root.querySelectorAll("table.table").forEach((table) => {
-      const headers = table.querySelectorAll("thead th");
-      headers.forEach((header) => {
+      table.querySelectorAll("thead th").forEach((header) => {
         if (header.textContent.trim() === "Duration") header.textContent = "Display time";
       });
       table.querySelectorAll("input[data-item-duration]").forEach((input) => {
-        input.setAttribute("aria-label", "Display time in seconds");
-        input.setAttribute("title", "How long this slide should stay on screen");
+        const row = input.closest("tr");
+        if (assetTypeForPlaylistRow(row) === "video") {
+          input.disabled = true;
+          input.value = "";
+          input.placeholder = "Auto";
+          input.setAttribute("aria-label", "Automatic video display time");
+          input.setAttribute("title", "Automatic: video plays to its natural end");
+          input.dataset.videoAutoDisplay = "1";
+        } else {
+          input.disabled = false;
+          input.placeholder = "";
+          input.setAttribute("aria-label", "Display time in seconds");
+          input.setAttribute("title", "How long this slide should stay on screen");
+          delete input.dataset.videoAutoDisplay;
+        }
       });
     });
   }
