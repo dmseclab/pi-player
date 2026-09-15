@@ -25,9 +25,9 @@ class FirstSetupRequest(BaseModel):
     bootstrap_username: str
     bootstrap_password: str
     admin_username: str = Field(min_length=2, max_length=64)
-    admin_password: str = Field(min_length=10, max_length=256)
+    admin_password: str = Field(min_length=9, max_length=256)
     support_username: str = Field(min_length=2, max_length=31)
-    support_password: str = Field(min_length=10, max_length=256)
+    support_password: str = Field(min_length=9, max_length=256)
     hostname: str = Field(default="pi-player", min_length=1, max_length=63)
 
 
