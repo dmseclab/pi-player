@@ -10,7 +10,7 @@ Group=pi
 WorkingDirectory=/opt/pi-player-rk
 Environment=PI_PLAYER_DATA_DIR=/var/lib/pi-player
 Environment=PI_PLAYER_LOG_DIR=/var/log/pi-player
-Environment=PI_PLAYER_SESSION_SECRET=change-this-before-production
+EnvironmentFile=-/etc/pi-player/environment
 Environment="PI_PLAYER_RESTART_CMD=/usr/bin/systemctl restart pi-player-kiosk.service"
 ExecStart=/opt/pi-player-rk/.venv/bin/python -m uvicorn pi_player.application:app --host 0.0.0.0 --port 8000
 Restart=always
