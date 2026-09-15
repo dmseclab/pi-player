@@ -16,11 +16,13 @@ install -o root -g root -m 0755 "$APP_DIR/deploy/pi-player-system" /usr/local/sb
 if [[ ! -f /etc/pi-player/environment ]]; then printf 'PI_PLAYER_SESSION_SECRET=%s\n' "$(python3 -c 'import secrets; print(secrets.token_hex(32))')" > /etc/pi-player/environment; chmod 0600 /etc/pi-player/environment; fi
 USER_HOME="$(getent passwd "$APP_USER"|cut -d: -f6)"; LABWC_DIR="$USER_HOME/.config/labwc"; mkdir -p "$LABWC_DIR"; AUTOSTART="$LABWC_DIR/autostart"; touch "$AUTOSTART"; START_LINE="sleep 8 && $APP_DIR/deploy/launch-kiosk.sh &"; grep -Fq "$APP_DIR/deploy/launch-kiosk.sh" "$AUTOSTART" || printf '\n# Pi Player RK kiosk\n%s\n' "$START_LINE" >> "$AUTOSTART"; chown -R "$APP_USER:$APP_USER" "$USER_HOME/.config"
 if [[ "$APPLIANCE" == "1" ]]; then hostnamectl set-hostname pi-player; mkdir -p /etc/systemd/system/getty@tty1.service.d; printf '[Service]\nExecStart=\nExecStart=-/sbin/agetty --autologin %s --noclear %%I $TERM\n' "$APP_USER" > /etc/systemd/system/getty@tty1.service.d/autologin.conf; printf 'if [ -z "$WAYLAND_DISPLAY" ] && [ "${XDG_VTNR:-}" = "1" ]; then\n    exec dbus-run-session labwc\nfi\n' > "$USER_HOME/.bash_profile"; chown "$APP_USER:$APP_USER" "$USER_HOME/.bash_profile"; fi
-if [[ "$FRESH_APPLIANCE" == "1" ]]; then cd "$APP_DIR"; "$APP_DIR/.venv/bin/python" - <<'PY'
+if [[ "$FRESH_APPLIANCE" == "1" ]]; then cd "$APP_DIR"; PI_PLAYER_DATA_DIR="$DATA_DIR" "$APP_DIR/.venv/bin/python" - <<'PY'
 from pi_player.db import init_db, db, set_setting
 init_db()
-with db() as c: set_setting(c,"setup_required","1")
+with db() as c:
+    set_setting(c, "setup_required", "1")
 PY
+chown -R "$APP_USER:$APP_USER" "$DATA_DIR"
 fi
 systemctl daemon-reload; systemctl enable pi-player-api.service; systemctl restart pi-player-api.service; systemctl enable --now pi-player-health.timer; [[ "$APPLIANCE" == "1" ]] && systemctl enable --now pi-player-watchdog.timer || true
 echo "Installed Pi Player RK."; [[ "$APPLIANCE" == "1" ]] && echo "Appliance mode enabled."; echo "API: http://<pi-address>:8000/"; echo "Health: http://127.0.0.1:8000/api/health"; echo "Reboot to test the full kiosk boot."
