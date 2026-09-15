@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  hostname)
+    [[ $# -eq 1 ]] || exit 2
+    hostnamectl set-hostname "$1"
+    ;;
+  support-user)
+    [[ $# -eq 2 ]] || exit 2
+    user="$1"; password="$2"
+    if id "$user" >/dev/null 2>&1; then
+      usermod -aG sudo "$user"
+    else
+      useradd -m -s /bin/bash -G sudo "$user"
+    fi
+    printf '%s:%s\n' "$user" "$password" | chpasswd
+    ;;
+  network-dhcp)
+    [[ $# -eq 1 ]] || exit 2
+    iface="$1"
+    conn="$(nmcli -g GENERAL.CONNECTION device show "$iface" | head -n1)"
+    [[ -n "$conn" && "$conn" != "--" ]] || { echo "No active NetworkManager connection for $iface" >&2; exit 3; }
+    nmcli connection modify "$conn" ipv4.method auto ipv4.addresses "" ipv4.gateway "" ipv4.dns ""
+    nmcli connection up "$conn"
+    ;;
+  network-static)
+    [[ $# -eq 5 ]] || exit 2
+    iface="$1"; address="$2"; prefix="$3"; gateway="$4"; dns="$5"
+    conn="$(nmcli -g GENERAL.CONNECTION device show "$iface" | head -n1)"
+    [[ -n "$conn" && "$conn" != "--" ]] || { echo "No active NetworkManager connection for $iface" >&2; exit 3; }
+    nmcli connection modify "$conn" ipv4.method manual ipv4.addresses "$address/$prefix" ipv4.gateway "$gateway" ipv4.dns "$dns"
+    nmcli connection up "$conn"
+    ;;
+  *)
+    echo "Unsupported command" >&2
+    exit 2
+    ;;
+esac
