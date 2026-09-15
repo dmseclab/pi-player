@@ -6,7 +6,50 @@
   function enhanceRows(){if(typeof state==='undefined')return;const list=document.querySelector('#asset-list');if(!list)return;for(const asset of state.assets){if(asset.type!=='video')continue;const edit=list.querySelector(`button[data-edit-asset="${asset.id}"]`);if(edit){const row=edit.closest('tr');if(row){row.children[0].innerHTML='<span class="pill">Video</span>';const d=row.children[3];if(!d.querySelector('.video-detail'))d.insertAdjacentHTML('beforeend',`<div class="video-detail"><span class="pill">${escapeHtml(asset.display_mode||'fit')}</span> <span class="pill">${asset.video_muted?'Muted':'Audio'}</span> ${asset.video_loop?'<span class="pill">Loop</span>':''}</div>`);}}const save=list.querySelector(`button[data-save-asset="${asset.id}"]`);if(save){const row=save.closest('[data-editing-asset]');if(row){row.children[0].innerHTML='<span class="pill">Video</span>';const d=row.children[3];if(!d.querySelector('[data-video-settings]'))d.insertAdjacentHTML('beforeend',`<div data-video-settings><div class="form-row"><label>Display mode</label><select data-video-mode><option value="fit" ${(asset.display_mode||'fit')==='fit'?'selected':''}>Fit</option><option value="fill" ${asset.display_mode==='fill'?'selected':''}>Fill</option><option value="stretch" ${asset.display_mode==='stretch'?'selected':''}>Stretch</option></select></div><label><input type="checkbox" data-video-muted ${asset.video_muted?'checked':''}> Muted</label><br><label><input type="checkbox" data-video-loop ${asset.video_loop?'checked':''}> Loop video</label></div>`);}}}}
     enhanceVideoTimers();
   }
-  function enhanceVideoTimers(){if(typeof state==='undefined')return;document.querySelectorAll('#playlist-list section.panel').forEach(panel=>{const addForm=panel.querySelector('form[data-add-item]');if(addForm){const select=addForm.querySelector('select[name="asset_id"]'),duration=addForm.querySelector('input[name="duration_seconds"]');const sync=()=>{const asset=state.assets.find(a=>a.id===select.value);const auto=asset?.type==='video'&&!asset.video_loop;if(duration){duration.disabled=auto;duration.title=auto?'Video plays to its natural end':'Display time in seconds';const wrapper=duration.closest('.playlist-timer-field');const label=wrapper?.querySelector('label');if(label)label.textContent=auto?'Display time — Auto (video length)':'Display time (seconds)';}};if(select&&!select.dataset.videoTimer){select.dataset.videoTimer='1';select.addEventListener('change',sync);}sync();}panel.querySelectorAll('tr').forEach(row=>{const duration=row.querySelector('input[data-item-duration]');if(!duration)return;const assetName=row.children[1]?.textContent?.trim();const asset=state.assets.find(a=>a.name===assetName);if(asset?.type==='video'&&!asset.video_loop){duration.disabled=true;duration.title='Automatic: video plays to its natural end';duration.value='';duration.placeholder='Auto';}});});}
+  function enhanceVideoTimers(){
+    if(typeof state==='undefined')return;
+    document.querySelectorAll('#playlist-list section.panel').forEach(panel=>{
+      const addForm=panel.querySelector('form[data-add-item]');
+      if(addForm){
+        const select=addForm.querySelector('select[name="asset_id"]'),duration=addForm.querySelector('input[name="duration_seconds"]');
+        const sync=()=>{
+          if(!select||!duration)return;
+          const asset=state.assets.find(a=>a.id===select.value);
+          const isVideo=asset?.type==='video';
+          duration.disabled=isVideo;
+          duration.required=!isVideo;
+          if(isVideo){
+            duration.dataset.previousValue=duration.dataset.previousValue||duration.value||'15';
+            duration.value='';
+            duration.placeholder='Auto';
+            duration.title='Automatic: video plays to its natural end';
+          }else{
+            if(!duration.value)duration.value=duration.dataset.previousValue||'15';
+            duration.placeholder='';
+            duration.title='How long this slide should stay on screen';
+          }
+          const wrapper=duration.closest('.playlist-timer-field');
+          const label=wrapper?.querySelector('label');
+          if(label)label.textContent=isVideo?'Display time — Auto (video length)':'Display time (seconds)';
+        };
+        if(select&&!select.dataset.videoTimer){select.dataset.videoTimer='1';select.addEventListener('change',sync);}
+        sync();
+      }
+      panel.querySelectorAll('tr').forEach(row=>{
+        const duration=row.querySelector('input[data-item-duration]');if(!duration)return;
+        const assetName=row.children[1]?.textContent?.trim();
+        const asset=state.assets.find(a=>a.name===assetName);
+        if(asset?.type==='video'){
+          duration.disabled=true;
+          duration.value='';
+          duration.placeholder='Auto';
+          duration.title='Automatic: video plays to its natural end';
+          const cell=duration.closest('td');
+          if(cell&&!cell.querySelector('.video-auto-time'))cell.insertAdjacentHTML('beforeend',' <span class="pill video-auto-time">Auto</span>');
+        }
+      });
+    });
+  }
   const list=document.querySelector('#asset-list');if(list)new MutationObserver(()=>requestAnimationFrame(enhanceRows)).observe(list,{childList:true,subtree:true});const playlists=document.querySelector('#playlist-list');if(playlists)new MutationObserver(()=>requestAnimationFrame(enhanceVideoTimers)).observe(playlists,{childList:true,subtree:true});
   document.addEventListener('click',async e=>{const b=e.target.closest('button[data-save-asset]');if(!b||typeof state==='undefined')return;const asset=state.assets.find(x=>x.id===b.dataset.saveAsset);if(!asset||asset.type!=='video')return;e.preventDefault();e.stopImmediatePropagation();const row=b.closest('[data-editing-asset]');const payload={name:row.querySelector('[data-asset-edit-name]').value.trim(),display_mode:row.querySelector('[data-video-mode]').value,muted:row.querySelector('[data-video-muted]').checked,loop:row.querySelector('[data-video-loop]').checked};const r=await fetch(`/api/assets/${asset.id}/video-settings`,{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const d=await r.json().catch(()=>({}));if(!r.ok){alert(d.detail||'Failed to save video settings');return;}state.editingAssetId=null;await Promise.all([loadAssets(),loadPlaylists(),loadStatus()]);},true);
   document.addEventListener('DOMContentLoaded',()=>{syncUpload();enhanceRows();enhanceVideoTimers();});syncUpload();enhanceRows();enhanceVideoTimers();
