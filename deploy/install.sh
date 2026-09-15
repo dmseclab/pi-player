@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-APP_DIR="/opt/pi-player-rk"; DATA_DIR="/var/lib/pi-player"; LOG_DIR="/var/log/pi-player"; APPLIANCE="${PI_PLAYER_APPLIANCE:-0}"; APP_USER="${PI_PLAYER_USER:-pi}"; [[ "$APPLIANCE" == "1" ]] && APP_USER="pi-player"; FRESH_APPLIANCE=0; [[ "$APPLIANCE" == "1" && ! -f "$DATA_DIR/pi-player.db" ]] && FRESH_APPLIANCE=1
+APP_DIR="/opt/pi-player-rk"; DATA_DIR="/var/lib/pi-player"; LOG_DIR="/var/log/pi-player"; APPLIANCE="${PI_PLAYER_APPLIANCE:-0}"; APP_USER="${PI_PLAYER_USER:-pi}"; [[ "$APPLIANCE" == "1" ]] && APP_USER="pi-player"; FRESH_APPLIANCE=0; [[ "$APPLIANCE" == "1" && ! -f "$DATA_DIR/pi_player.sqlite3" ]] && FRESH_APPLIANCE=1
 [[ "$(id -u)" -eq 0 ]] || { echo "Run this installer with sudo."; exit 1; }
 if ! id "$APP_USER" >/dev/null 2>&1; then [[ "$APPLIANCE" == "1" ]] && useradd -m -s /bin/bash -G video,input,render "$APP_USER" || { echo "User '$APP_USER' does not exist." >&2; exit 1; }; fi
 export DEBIAN_FRONTEND=noninteractive
