@@ -1,56 +1,14 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pi Player RK</title>
-  <link rel="stylesheet" href="/static/styles.css">
-</head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Pi Player RK</title><link rel="stylesheet" href="/static/styles.css?v=4"></head>
 <body>
-  <div id="login" class="login-shell hidden">
-    <form class="login-card" id="login-form">
-      <h1>Pi Player RK</h1>
-      <p class="muted">Sign in to manage signage assets and playlists.</p>
-      <div id="login-message"></div>
-      <div class="form-row"><label for="username">Username</label><input id="username" autocomplete="username" value="pi"></div>
-      <div class="form-row"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" value="pi"></div>
-      <button class="primary" type="submit">Sign in</button>
-    </form>
-  </div>
-  <div id="app" class="hidden">
-    <header class="topbar"><h1>Pi Player RK</h1><span id="player-name" class="pill">Loading</span><span class="spacer"></span><button id="open-player">Open Player</button><button id="logout">Logout</button></header>
-    <div class="layout">
-      <aside class="sidebar"><button class="nav-button active" data-tab="dashboard">Dashboard</button><button class="nav-button" data-tab="assets">Assets</button><button class="nav-button" data-tab="playlists">Playlists</button><button class="nav-button" data-tab="settings">Settings</button><button class="nav-button" data-tab="logs">Logs</button></aside>
-      <main class="main">
-        <section id="tab-dashboard" class="tab grid"><div class="panel"><div class="toolbar"><h2>Status</h2><button id="refresh-status">Refresh</button><button class="primary" id="start-playback">Start</button><button id="stop-playback">Stop</button><button id="restart-player">Restart Player</button></div><div id="status-content" class="grid two"></div></div></section>
-        <section id="tab-assets" class="tab grid hidden">
-          <div class="grid two asset-create-grid">
-            <form class="panel asset-create-panel" id="upload-form">
-              <h2>Upload Image</h2>
-              <div class="form-row"><label for="asset-file">Image file</label><div class="file-picker"><input id="asset-file" name="file" type="file" accept="image/*" required><label class="file-picker-button" for="asset-file">Choose File</label><span id="asset-file-name" class="file-picker-name">No file chosen</span></div></div>
-              <div class="form-row"><label for="asset-name">Display name</label><input id="asset-name" name="name" placeholder="Optional"></div>
-              <div class="asset-actions">
-                <div class="form-row compact-form-row"><label for="asset-display-mode">Display mode</label><select id="asset-display-mode" name="display_mode"><option value="fit" selected>Fit</option><option value="fill">Fill</option><option value="stretch">Stretch</option></select></div>
-                <button class="primary" type="submit">Upload</button>
-              </div>
-            </form>
-            <form class="panel asset-create-panel" id="link-form"><h2>Add Website Link</h2><div class="form-row"><label for="link-name">Display name</label><input id="link-name" placeholder="e.g. Company Intranet" required></div><div class="form-row"><label for="link-url">URL</label><input id="link-url" type="url" placeholder="https://example.com" required></div><div class="asset-actions link-actions"><div class="form-row compact-form-row"><label for="link-display-mode">Display mode</label><select id="link-display-mode"><option value="embed" selected>Embed</option><option value="direct">Direct</option></select></div><button class="primary" type="submit">Add Link</button></div></form>
-          </div>
-          <div class="panel"><div class="toolbar"><h2>Assets</h2><button id="refresh-assets">Refresh</button></div><div id="asset-list"></div></div>
-        </section>
-        <section id="tab-playlists" class="tab grid hidden"><div class="panel"><form class="toolbar" id="playlist-form"><input id="playlist-name" placeholder="New playlist name" required><button class="primary" type="submit">Create Playlist</button></form><div id="playlist-list"></div></div></section>
-        <section id="tab-settings" class="tab grid hidden"><form class="panel" id="settings-form"><h2>Settings</h2><div class="grid two"><div class="form-row"><label for="setting-player-name">Player name</label><input id="setting-player-name" required></div><div class="form-row"><label for="setting-max-upload">Max upload MB</label><input id="setting-max-upload" type="number" min="1" max="2048" required></div></div><button class="primary" type="submit">Save Settings</button></form><form class="panel" id="password-form"><h2>Admin Login</h2><div class="grid two"><div class="form-row"><label for="setting-username">Username</label><input id="setting-username" required></div><div class="form-row"><label for="setting-password">New password</label><input id="setting-password" type="password" required></div></div><button class="primary" type="submit">Update Login</button></form></section>
-        <section id="tab-logs" class="tab grid hidden"><div class="panel"><div class="toolbar"><h2>Logs</h2><button id="refresh-logs">Refresh</button></div><div id="log-list"></div></div></section>
-      </main>
-    </div>
-  </div>
-  <script src="/static/admin.js"></script>
-  <script src="/static/website-options.js?v=1"></script>
-  <script src="/static/link-mode.js?v=2"></script>
-  <script src="/static/upload-ui.js"></script>
-  <script src="/static/image-mode.js?v=1"></script>
-  <script src="/static/playlist-timer.js?v=1"></script>
-  <script src="/static/playlist-backup.js?v=1"></script>
-  <script src="/static/status-ip.js?v=2"></script>
-</body>
-</html>
+<div id="login" class="login-shell hidden"><form class="login-card" id="login-form"><h1>Pi Player RK</h1><p class="muted">Sign in to manage signage assets and playlists.</p><div id="login-message"></div><div class="form-row"><label for="username">Username</label><input id="username" autocomplete="username" value="pi"></div><div class="form-row"><label for="password">Password</label><input id="password" type="password" autocomplete="current-password" value="pi"></div><button class="primary" type="submit">Sign in</button></form></div>
+<div id="app" class="hidden"><header class="topbar"><h1>Pi Player RK</h1><span id="player-name" class="pill">Loading</span><span class="spacer"></span><button id="open-player">Open Player</button><button id="logout">Logout</button></header><div class="layout"><aside class="sidebar"><button class="nav-button active" data-tab="dashboard">Dashboard</button><button class="nav-button" data-tab="assets">Assets</button><button class="nav-button" data-tab="playlists">Playlists</button><button class="nav-button" data-tab="settings">Settings</button><button class="nav-button" data-tab="logs">Logs</button></aside><main class="main">
+<section id="tab-dashboard" class="tab grid"><div class="panel"><div class="toolbar"><h2>Status</h2><button id="refresh-status">Refresh</button><button class="primary" id="start-playback">Start</button><button id="stop-playback">Stop</button><button id="restart-player">Restart Player</button></div><div id="status-content" class="grid two"></div></div></section>
+<section id="tab-assets" class="tab grid hidden"><div class="grid two asset-create-grid"><form class="panel asset-create-panel" id="upload-form"><h2>Upload Image or Video</h2><div class="form-row"><label for="asset-file">Image or video file</label><div class="file-picker"><input id="asset-file" name="file" type="file" accept="image/*,video/mp4,video/webm" required><label class="file-picker-button" for="asset-file">Choose File</label><span id="asset-file-name" class="file-picker-name">No file chosen</span></div></div><div class="form-row"><label for="asset-name">Display name</label><input id="asset-name" name="name" placeholder="Optional"></div><div class="asset-actions"><div class="form-row compact-form-row"><label for="asset-display-mode">Display mode</label><select id="asset-display-mode" name="display_mode"><option value="fit" selected>Fit</option><option value="fill">Fill</option><option value="stretch">Stretch</option></select></div><button class="primary" type="submit">Upload</button></div></form><form class="panel asset-create-panel" id="link-form"><h2>Add Website Link</h2><div class="form-row"><label for="link-name">Display name</label><input id="link-name" placeholder="e.g. Company Intranet" required></div><div class="form-row"><label for="link-url">URL</label><input id="link-url" type="url" placeholder="https://example.com" required></div><div class="asset-actions link-actions"><div class="form-row compact-form-row"><label for="link-display-mode">Display mode</label><select id="link-display-mode"><option value="embed" selected>Embed</option><option value="direct">Direct</option></select></div><button class="primary" type="submit">Add Link</button></div></form></div><div class="panel"><div class="toolbar"><h2>Assets</h2><button id="refresh-assets">Refresh</button></div><div id="asset-list"></div></div></section>
+<section id="tab-playlists" class="tab grid hidden"><div class="panel"><form class="toolbar" id="playlist-form"><input id="playlist-name" placeholder="New playlist name" required><button class="primary" type="submit">Create Playlist</button></form><div id="playlist-list"></div></div></section>
+<section id="tab-settings" class="tab grid hidden"><form class="panel" id="settings-form"><h2>Settings</h2><div class="grid two"><div class="form-row"><label for="setting-player-name">Player name</label><input id="setting-player-name" required></div><div class="form-row"><label for="setting-max-upload">Max upload MB</label><input id="setting-max-upload" type="number" min="1" max="2048" required></div></div><button class="primary" type="submit">Save Settings</button></form><form class="panel" id="password-form"><h2>Admin Login</h2><div class="grid two"><div class="form-row"><label for="setting-username">Username</label><input id="setting-username" required></div><div class="form-row"><label for="setting-password">New password</label><input id="setting-password" type="password" required></div></div><button class="primary" type="submit">Update Login</button></form></section>
+<section id="tab-logs" class="tab grid hidden"><div class="panel"><div class="toolbar"><h2>Logs</h2><button id="refresh-logs">Refresh</button></div><div id="log-list"></div></div></section>
+</main></div></div>
+<script src="/static/admin.js"></script><script src="/static/website-options.js?v=1"></script><script src="/static/link-mode.js?v=2"></script><script src="/static/upload-ui.js"></script><script src="/static/image-mode.js?v=1"></script><script src="/static/video-ui.js?v=1"></script><script src="/static/playlist-timer.js?v=1"></script><script src="/static/playlist-backup.js?v=1"></script><script src="/static/status-ip.js?v=2"></script>
+</body></html>
