@@ -100,7 +100,12 @@ uploadForm?.addEventListener("submit", (event) => {
     uploadForm.reset();
     try {
       if (typeof loadAssets === "function" && typeof loadPlaylists === "function" && typeof loadStatus === "function") {
-        await Promise.all([loadAssets(), loadPlaylists(), loadStatus()]);
+        // Playlist dropdowns are rendered from state.assets, so assets must finish
+        // loading before playlists are rebuilt. Running these in parallel caused
+        // newly uploaded videos to appear late and prevented Auto timing detection.
+        await loadAssets();
+        await loadPlaylists();
+        await loadStatus();
       }
     } catch (error) {
       console.error("Upload completed but UI refresh failed", error);
