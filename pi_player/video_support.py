@@ -101,7 +101,10 @@ def local_media(asset_id:str)->FileResponse:
     if row["type"] not in {"image","video"} or not row["storage_path"]: raise HTTPException(404,"No local media for asset")
     path=Path(row["storage_path"]).resolve()
     if not path.is_file() or ASSET_DIR.resolve() not in path.parents: raise HTTPException(404,"Media file missing")
-    return FileResponse(path,media_type=row["mime_type"] or "application/octet-stream",filename=row["original_filename"])
+    response=FileResponse(path,media_type=row["mime_type"] or "application/octet-stream")
+    response.headers["Content-Disposition"]=f'inline; filename="{path.name}"'
+    response.headers["Cache-Control"]="no-cache"
+    return response
 
 @app.put("/api/assets/{asset_id}/video-settings")
 def video_settings(asset_id:str,payload:VideoSettingsRequest,user:Annotated[str,Depends(require_user)])->dict[str,Any]:
