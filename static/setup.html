@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pi Player First-Time Setup</title><link rel="stylesheet" href="/static/styles.css"></head>
+<body><main class="setup-shell"><form class="panel setup-card" id="setup-form">
+<h1>Welcome to Pi Player</h1><p class="muted">Secure and identify this player before adding content.</p><div id="setup-message"></div>
+<h2>1. Temporary login</h2><div class="grid two"><div class="form-row"><label>Temporary username</label><input id="bootstrap-username" value="pi" autocomplete="username" required></div><div class="form-row"><label>Temporary password</label><input id="bootstrap-password" type="password" autocomplete="current-password" required></div></div>
+<h2>2. Web administrator</h2><div class="grid two"><div class="form-row"><label>Admin username</label><input id="admin-username" required></div><div class="form-row"><label>Admin password</label><input id="admin-password" type="password" minlength="10" required></div></div>
+<h2>3. SSH support account</h2><div class="grid two"><div class="form-row"><label>SSH username</label><input id="support-username" pattern="[a-z_][a-z0-9_-]*" required></div><div class="form-row"><label>SSH password</label><input id="support-password" type="password" minlength="10" required></div></div>
+<h2>4. Player identity</h2><div class="form-row"><label>Hostname</label><input id="hostname" value="pi-player" maxlength="63" required></div>
+<p class="muted">Networking starts on DHCP. Static IPv4 can be configured after signing in to the admin page.</p><button class="primary" type="submit">Secure Player & Continue</button>
+</form></main><script src="/static/setup.js?v=1"></script></body></html>
