@@ -9,7 +9,11 @@ systemctl enable --now ssh seatd
 mkdir -p "$APP_DIR" "$DATA_DIR/assets" "$DATA_DIR/tmp" "$LOG_DIR" /etc/pi-player
 rsync -a --delete --exclude ".git" --exclude ".venv" --exclude "data" --exclude "*.tar.gz" ./ "$APP_DIR"/
 python3 -m venv "$APP_DIR/.venv"; "$APP_DIR/.venv/bin/pip" install --upgrade pip; "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt"; chown -R "$APP_USER:$APP_USER" "$APP_DIR" "$DATA_DIR" "$LOG_DIR"
-for unit in pi-player-api.service pi-player-kiosk.service pi-player-health.service; do sed "s/^User=pi$/User=$APP_USER/; s/^Group=pi$/Group=$APP_USER/; s#/home/pi/#/home/$APP_USER/#g" "$APP_DIR/deploy/$unit" > "/etc/systemd/system/$unit"; done
+# The kiosk is owned exclusively by the tty1 -> labwc graphical session below.
+# Do not install/enable pi-player-kiosk.service as a second Chromium owner.
+for unit in pi-player-api.service pi-player-health.service; do sed "s/^User=pi$/User=$APP_USER/; s/^Group=pi$/Group=$APP_USER/; s#/home/pi/#/home/$APP_USER/#g" "$APP_DIR/deploy/$unit" > "/etc/systemd/system/$unit"; done
+systemctl disable --now pi-player-kiosk.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/pi-player-kiosk.service
 install -m 0644 "$APP_DIR/deploy/pi-player-health.timer" /etc/systemd/system/pi-player-health.timer; install -m 0644 "$APP_DIR/deploy/pi-player-watchdog.service" /etc/systemd/system/pi-player-watchdog.service; install -m 0644 "$APP_DIR/deploy/pi-player-watchdog.timer" /etc/systemd/system/pi-player-watchdog.timer; chmod 0755 "$APP_DIR/deploy/pi-player-watchdog.sh"
 sed "s/create 0640 pi pi/create 0640 $APP_USER $APP_USER/" "$APP_DIR/deploy/pi-player.logrotate" > /etc/logrotate.d/pi-player
 install -o root -g root -m 0755 "$APP_DIR/deploy/pi-player-system" /usr/local/sbin/pi-player-system; printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/pi-player-system *\n' "$APP_USER" > /etc/sudoers.d/pi-player-system; chmod 0440 /etc/sudoers.d/pi-player-system
@@ -25,4 +29,7 @@ PY
 chown -R "$APP_USER:$APP_USER" "$DATA_DIR"
 fi
 systemctl daemon-reload; systemctl enable pi-player-api.service; systemctl restart pi-player-api.service; systemctl enable --now pi-player-health.timer; [[ "$APPLIANCE" == "1" ]] && systemctl enable --now pi-player-watchdog.timer || true
+# On an existing appliance, recycle the single graphical session after an update
+# so Chromium loads the frontend that matches the newly installed backend.
+if [[ "$APPLIANCE" == "1" && "$FRESH_APPLIANCE" == "0" ]]; then systemctl restart getty@tty1.service || true; fi
 echo "Installed Pi Player RK."; [[ "$APPLIANCE" == "1" ]] && echo "Appliance mode enabled."; echo "API: http://<pi-address>:8000/"; echo "Health: http://127.0.0.1:8000/api/health"; echo "Reboot to test the full kiosk boot."
