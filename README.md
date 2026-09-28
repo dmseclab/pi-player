@@ -2,7 +2,7 @@
 
 A lightweight, locally managed Raspberry Pi digital-signage player built to replace an unreliable piSignage deployment.
 
-**Current development line: Appliance v1 — hardware-validated foundation**
+**Current development line: Appliance v1 — 0.3.0-rc5**
 
 ## Validated baseline
 
@@ -21,13 +21,29 @@ Validated functions include:
 - automatic kiosk startup;
 - API/Chromium watchdog;
 - playlist recovery after reboot;
-- persistent local image assets;
+- persistent local image and video assets;
 - image Fit / Fill / Stretch modes;
+- MP4/WebM video upload and playback;
+- unattended Chromium video autoplay;
+- automatic video timing to natural media completion;
+- explicit video-media cleanup between playlist items;
+- stalled-video detection, one controlled recovery attempt and safe playlist continuation;
 - website Embed and controlled Direct playback;
-- per-item display time;
+- per-item display time for images and websites;
 - website zoom, test-link and reload options;
-- portable playlist export/import including local images;
+- upload progress/error feedback;
+- portable playlist export/import;
 - asset-integrity checks and scheduled health monitoring.
+
+## Release candidate
+
+### 0.3.0-rc5
+
+RC5 is the current Appliance v1 soak-test candidate. It adds the resilient video playback lifecycle required for unattended signage operation.
+
+Video items use **Auto** display timing and normally advance when the media reaches its natural end. Chromium is launched with unattended autoplay enabled for the dedicated kiosk session. During playback Pi Player monitors actual video progress. If progress stops for 15 seconds, one controlled `play()` recovery is attempted. If the video remains stalled, Pi Player explicitly pauses the media, detaches its source, clears video monitoring timers, removes the video element and continues safely to the next playlist item. A natural-duration plus 60-second safety ceiling provides an additional failsafe for non-looping video.
+
+The current RC5 build is undergoing extended unattended soak testing before the video implementation is considered hardware-validated.
 
 ## First-time appliance setup
 
@@ -56,21 +72,27 @@ Static IPv4 configuration is performed after provisioning from normal administra
 
 ## Assets
 
-Images are stored persistently under `/var/lib/pi-player/assets` and support:
+Images and uploaded videos are stored persistently under `/var/lib/pi-player/assets`.
+
+Images support:
 
 - **Fit** — whole image visible with aspect ratio preserved;
 - **Fill** — display filled with cropping allowed;
 - **Stretch** — display filled exactly, distortion allowed.
 
+Video assets currently support MP4 and WebM uploads. Video playlist items use **Auto** timing: non-looping video advances on natural media completion rather than an arbitrary slide duration. Video playback includes explicit media cleanup and stall recovery for unattended operation.
+
 Website assets support **Embed** and controlled **Direct** modes, configurable zoom, page reload and Test Link.
+
+PDF assets are planned but are not yet part of the current RC5 implementation.
 
 ## Playlists and backup
 
-Playlists support mixed image/website assets, independent display time per item, item enable/disable and one active playlist at a time.
+Playlists support mixed image, video and website assets, item enable/disable and one active playlist at a time. Images and websites use configurable display time; video uses automatic natural-duration playback.
 
-A playlist can be exported as a portable `.pi-player.zip` package and imported onto another player. Packages preserve item order, timing, enabled state, image mode, website mode/zoom/reload settings, local image files and checksums. Imported playlists are created inactive until explicitly activated.
+A playlist can be exported as a portable `.pi-player.zip` package and imported onto another player. The established package workflow preserves playlist/item configuration and local packaged assets supported by the exporter. Imported playlists are created inactive until explicitly activated.
 
-This export/import workflow has been validated on the Appliance v1 hardware test player after reboot.
+The original image/website export/import workflow has been validated on the Appliance v1 hardware test player after reboot. Video playback itself is currently under RC5 soak testing; full portable-package validation for video remains a milestone before the appliance image is finalized.
 
 ## Reliability design
 
@@ -85,9 +107,9 @@ This export/import workflow has been validated on the Appliance v1 hardware test
 
 Application upgrades may replace `/opt/pi-player-rk` but do not delete `/var/lib/pi-player`.
 
-Uploaded images are staged, size checked, SHA-256 hashed and moved atomically before metadata is committed. Asset integrity is checked at startup and every 15 minutes. Missing files, size/checksum mismatches, orphan files and temporary files are reported rather than silently deleted.
+Uploaded local media is staged and committed into persistent storage before being referenced by the player. Asset integrity is checked at startup and every 15 minutes. Missing files, size/checksum mismatches, orphan files and temporary files are reported rather than silently deleted.
 
-Appliance mode also installs a watchdog that checks the local API and Chromium/kiosk state and performs targeted recovery.
+Appliance mode installs a watchdog that checks the local API and Chromium/kiosk process state and performs targeted recovery. Video playback has an additional player-level recovery layer so a stalled media element does not permanently stop the playlist.
 
 ## Appliance development install
 
@@ -127,7 +149,7 @@ Pi boot
   -> labwc autostart
   -> launch-kiosk.sh
   -> wait for local API health
-  -> Chromium kiosk
+  -> Chromium kiosk (unattended autoplay enabled)
   -> startup information splash (5 seconds)
   -> active playlist
 ```
@@ -165,15 +187,23 @@ Confirmed on the test Raspberry Pi 4B:
 - reboot after provisioning;
 - normal operation after reboot;
 - playlist package import;
-- playlist playback after import.
+- playlist playback after import;
+- image playback and display modes;
+- video upload and playlist insertion;
+- automatic video display-time UI;
+- unattended video autoplay after clean boot;
+- natural-end video advancement.
+
+RC5 stall recovery and long-duration unattended video operation are currently being soak tested and are therefore not yet listed as completed hardware validation.
 
 ## Next milestones
 
-The appliance foundation is now validated. Planned next work:
+The appliance foundation is validated and video is in RC5 soak testing. Planned next work:
 
-- video assets;
-- PDF assets;
-- playlist package support for video/PDF;
+- complete RC5 unattended video soak test and inspect recovery logs;
+- validate portable playlist package handling for video;
+- PDF assets and PDF playlist playback;
+- playlist package support for PDF;
 - final System/Network administration validation;
 - flashable Raspberry Pi SD-card image;
 - automatic first-boot filesystem expansion and per-device initialization;
