@@ -101,6 +101,7 @@ def export_playlist(
             if asset_id not in assets:
                 asset: dict[str, Any] = {
                     "type": record["type"],
+                    "pdf_page_seconds": record.get("pdf_page_seconds", 10),
                     "name": record["name"],
                     "display_mode": record["display_mode"],
                     "original_filename": record["original_filename"],
@@ -112,7 +113,7 @@ def export_playlist(
                 if record["type"] == "website":
                     asset["zoom_percent"] = _zoom_percent(record.get("zoom_percent"))
                     asset["reload_seconds"] = _reload_seconds(record.get("reload_seconds"))
-                if record["type"] == "image":
+                if record["type"] in {"image", "pdf"}:
                     if not record["storage_path"]:
                         raise HTTPException(status_code=409, detail=f"Image asset '{record['name']}' has no storage path")
                     source = Path(record["storage_path"]).resolve()
@@ -142,7 +143,7 @@ def export_playlist(
         with zipfile.ZipFile(package_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("manifest.json", json.dumps(manifest, indent=2, sort_keys=True))
             for asset_ref, asset in assets.items():
-                if asset["type"] != "image":
+                if asset["type"] not in {"image", "pdf"}:
                     continue
                 row = conn.execute("SELECT storage_path FROM assets WHERE id = ?", (asset_ref,)).fetchone()
                 source = Path(row["storage_path"]).resolve()
@@ -237,17 +238,18 @@ def import_playlist(
                     asset_id = str(uuid.uuid4())
                     asset_name = str(asset.get("name") or "Imported Asset").strip()[:120]
 
-                    if asset_type == "image":
+                    if asset_type in {"image", "pdf"}:
                         member = str(asset.get("file") or "")
                         if not member.startswith("assets/") or member not in names or ".." in Path(member).parts:
                             raise HTTPException(status_code=400, detail=f"Image file for '{asset_name}' is missing from package")
                         extension = Path(member).suffix.lower()
-                        if extension not in ALLOWED_IMAGE_EXTENSIONS:
+                        if extension not in ({".pdf"} if asset_type == "pdf" else ALLOWED_IMAGE_EXTENSIONS):
                             raise HTTPException(status_code=400, detail=f"Unsupported image type in package: {extension}")
 
                         destination = ASSET_DIR / f"{asset_id}{extension}"
                         sha256 = hashlib.sha256()
                         written = 0
+                        created_files.append(destination)
                         with archive.open(member, "r") as source, destination.open("wb") as target:
                             while chunk := source.read(1024 * 1024):
                                 written += len(chunk)
@@ -255,7 +257,10 @@ def import_playlist(
                                     raise HTTPException(status_code=413, detail="Image in playlist package is too large")
                                 sha256.update(chunk)
                                 target.write(chunk)
-                        created_files.append(destination)
+                        with destination.open("rb") as source:
+                            header = source.read(5)
+                        if asset_type == "pdf" and header != b"%PDF-":
+                            raise HTTPException(status_code=400, detail="Invalid PDF header in package")
 
                         expected_checksum = asset.get("checksum_sha256")
                         actual_checksum = sha256.hexdigest()
@@ -268,21 +273,27 @@ def import_playlist(
                             INSERT INTO assets
                             (id, type, name, original_filename, storage_path, url, display_mode,
                              mime_type, size_bytes, checksum_sha256, created_at, updated_at)
-                            VALUES (?, 'image', ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
                             """,
                             (
                                 asset_id,
+                                asset_type,
                                 asset_name,
                                 original_filename,
                                 str(destination),
                                 _image_mode(asset.get("display_mode")),
-                                asset.get("mime_type") or "application/octet-stream",
+                                "application/pdf" if asset_type == "pdf" else (asset.get("mime_type") or "application/octet-stream"),
                                 written,
                                 actual_checksum,
                                 created,
                                 created,
                             ),
                         )
+                        if asset_type == "pdf":
+                            seconds = int(asset.get("pdf_page_seconds", 10))
+                            if not 1 <= seconds <= 86400:
+                                raise HTTPException(status_code=400, detail="Invalid PDF page timer")
+                            conn.execute("UPDATE assets SET pdf_page_seconds = ? WHERE id = ?", (seconds, asset_id))
                     elif asset_type == "website":
                         url = str(asset.get("url") or "").strip()
                         if not url.startswith(("http://", "https://")):

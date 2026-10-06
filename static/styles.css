@@ -479,3 +479,10 @@ button:disabled {
     width: 100%;
   }
 }
+
+.stage:has(canvas) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}

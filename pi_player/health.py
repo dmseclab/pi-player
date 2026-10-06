@@ -29,7 +29,7 @@ def integrity_report(*, verify_checksums: bool = False) -> dict[str, Any]:
             """
             SELECT id, name, storage_path, size_bytes, checksum_sha256
             FROM assets
-            WHERE deleted_at IS NULL AND type = 'image'
+            WHERE deleted_at IS NULL AND type IN ('image', 'pdf')
             ORDER BY created_at
             """
         ).fetchall()

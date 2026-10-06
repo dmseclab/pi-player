@@ -288,3 +288,19 @@ python -m uvicorn pi_player.application:app --reload --host 127.0.0.1 --port 800
 ```
 
 Development runtime data defaults to `./data`.
+
+### PDF signage
+
+Upload images or PDFs under **Assets → Upload Media**. PDFs use a configurable
+**PDF seconds per page** timer (default 10 seconds; editable on the asset).
+Pages render fullscreen, fitted to the display, without viewer controls. After
+the last page, the PDF loops until its playlist item duration ends. The slot
+starts once the first page renders; allow at least page count × seconds per page
+if every page should be shown. Each return to the PDF starts at page 1.
+
+Missing, corrupt and password protected PDFs are skipped. PDF files and page
+timers are included in playlist export/import. Existing databases automatically
+migrate their asset type constraint while retaining assets and playlist links.
+
+PDF.js 6.4.299 is bundled under `static/vendor/pdfjs` with its Apache-2.0 license,
+fonts, character maps and WASM helpers. Playback requires no external CDN.

@@ -83,13 +83,17 @@ def upload_asset_with_display_mode(
     file: UploadFile = File(...),
     name: str | None = Form(default=None),
     display_mode: str = Form(default="fit"),
+    pdf_page_seconds: int = Form(default=10, ge=1, le=86400),
 ) -> dict[str, Any]:
     image_mode = _clean_image_display_mode(display_mode)
     original_name = Path(file.filename or "upload").name
     extension = Path(original_name).suffix.lower()
-    if extension not in ALLOWED_IMAGE_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Only image uploads are supported in v1")
-    if file.content_type and not file.content_type.startswith(ALLOWED_IMAGE_MIME_PREFIXES):
+    asset_type = "pdf" if extension == ".pdf" else "image"
+    if extension not in ALLOWED_IMAGE_EXTENSIONS | {".pdf"}:
+        raise HTTPException(status_code=400, detail="Only images and PDFs are supported")
+    if asset_type == "pdf" and file.content_type not in {None, "application/pdf", "application/octet-stream"}:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a PDF")
+    if asset_type == "image" and file.content_type and not file.content_type.startswith(ALLOWED_IMAGE_MIME_PREFIXES):
         raise HTTPException(status_code=400, detail="Uploaded file is not an image")
 
     with db() as conn:
@@ -112,12 +116,16 @@ def upload_asset_with_display_mode(
                     )
                 sha256.update(chunk)
                 target.write(chunk)
+        with tmp_path.open("rb") as source:
+            header = source.read(5)
+        if asset_type == "pdf" and header != b"%PDF-":
+            raise HTTPException(status_code=400, detail="Invalid PDF header")
         tmp_path.replace(final_path)
     finally:
         if tmp_path.exists():
             tmp_path.unlink()
 
-    mime_type = file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+    mime_type = "application/pdf" if asset_type == "pdf" else (file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream")
     display_name = name.strip() if name and name.strip() else Path(original_name).stem
     created = now_iso()
 
@@ -127,10 +135,11 @@ def upload_asset_with_display_mode(
             INSERT INTO assets
             (id, type, name, original_filename, storage_path, url, display_mode,
              mime_type, size_bytes, checksum_sha256, created_at, updated_at)
-            VALUES (?, 'image', ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)
             """,
             (
                 asset_id,
+                asset_type,
                 display_name,
                 original_name,
                 str(final_path),
@@ -142,6 +151,7 @@ def upload_asset_with_display_mode(
                 created,
             ),
         )
+        conn.execute("UPDATE assets SET pdf_page_seconds = ? WHERE id = ?", (pdf_page_seconds, asset_id))
         audit(
             conn,
             user,
@@ -151,7 +161,7 @@ def upload_asset_with_display_mode(
             {"name": display_name, "bytes": size, "display_mode": image_mode},
         )
         row = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
-        logger.info("Uploaded image asset %s (%s bytes, mode=%s)", asset_id, size, image_mode)
+        logger.info("Uploaded %s asset %s (%s bytes, mode=%s)", asset_type, asset_id, size, image_mode)
         return _asset_response(dict(row))
 
 
@@ -175,6 +185,11 @@ def update_asset_with_display_mode(
             conn.execute(
                 "UPDATE assets SET name = ?, url = ?, display_mode = ?, updated_at = ? WHERE id = ?",
                 (payload.name.strip(), clean_url, mode, now_iso(), asset_id),
+            )
+        elif asset["type"] == "pdf":
+            conn.execute(
+                "UPDATE assets SET name = ?, pdf_page_seconds = ?, updated_at = ? WHERE id = ?",
+                (payload.name.strip(), payload.pdf_page_seconds or asset["pdf_page_seconds"], now_iso(), asset_id),
             )
         else:
             current_mode = asset["display_mode"] if asset["display_mode"] in IMAGE_DISPLAY_MODES else "fit"

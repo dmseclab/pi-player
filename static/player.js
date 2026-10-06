@@ -5,6 +5,7 @@ let index = 0;
 let timer = null;
 let reloadTimer = null;
 let directWindow = null;
+let stopPdf = null;
 
 function signature(data) {
   return JSON.stringify({
@@ -20,6 +21,8 @@ function signature(data) {
       item.asset_display_mode,
       item.asset_zoom_percent,
       item.asset_reload_seconds,
+      item.asset_pdf_page_seconds,
+      item.asset_file_present,
     ]),
   });
 }
@@ -87,6 +90,8 @@ function applyEmbedZoom(iframe, zoomPercent) {
 }
 
 function playCurrent() {
+  if (stopPdf) stopPdf();
+  stopPdf = null;
   if (timer) clearTimeout(timer);
   clearWebsiteReload();
   closeDirectWindow();
@@ -114,6 +119,22 @@ function playCurrent() {
       console.error("Image failed to load", item.asset_id, item.asset_name);
       advanceSoon();
     }, { once: true });
+  } else if (item.asset_type === "pdf") {
+    if (item.asset_file_present === false) {
+      showMessage("PDF file missing");
+      advanceSoon();
+      return;
+    }
+    showMessage("Loading PDF...");
+    stopPdf = startPdfPlayback(item, stage,
+      () => { timer = setTimeout(advance, durationMs); },
+      (error) => {
+        console.error("PDF failed to render", item.asset_id, error);
+        showMessage("PDF could not be displayed");
+        if (stopPdf) stopPdf();
+        advanceSoon();
+      });
+    return;
   } else if (item.asset_type === "website") {
     if (item.asset_display_mode === "direct") {
       directWindow = window.open(item.asset_url, "pi-player-direct");
@@ -171,6 +192,7 @@ function advanceSoon() {
 }
 
 window.addEventListener("beforeunload", () => {
+  if (stopPdf) stopPdf();
   clearWebsiteReload();
   closeDirectWindow();
 });

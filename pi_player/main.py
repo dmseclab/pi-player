@@ -67,6 +67,7 @@ class AssetUpdateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     url: str | None = Field(default=None, min_length=4, max_length=2048)
     display_mode: str | None = None
+    pdf_page_seconds: int | None = Field(default=None, ge=1, le=86400)
 
 
 class PlaylistRequest(BaseModel):
@@ -354,7 +355,7 @@ def delete_asset(asset_id: str, user: Annotated[str, Depends(require_user)]) -> 
 def media(asset_id: str) -> FileResponse:
     with db() as conn:
         row = _ensure_asset(conn, asset_id)
-    if row["type"] != "image" or not row["storage_path"]:
+    if row["type"] not in {"image", "pdf"} or not row["storage_path"]:
         raise HTTPException(status_code=404, detail="No local media for asset")
     path = Path(row["storage_path"]).resolve()
     if not path.exists() or ASSET_DIR.resolve() not in path.parents:
@@ -567,8 +568,8 @@ def _ensure_playlist_item(conn, playlist_id: str, item_id: str):
 
 
 def _asset_response(row: dict[str, Any]) -> dict[str, Any]:
-    row["media_url"] = f"/media/{row['id']}" if row["type"] == "image" else None
-    if row["type"] == "image":
+    row["media_url"] = f"/media/{row['id']}" if row["type"] in {"image", "pdf"} else None
+    if row["type"] in {"image", "pdf"}:
         path = Path(row["storage_path"]).resolve() if row.get("storage_path") else None
         row["file_present"] = bool(path and path.is_file() and ASSET_DIR.resolve() in path.parents)
     else:
