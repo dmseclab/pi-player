@@ -2,112 +2,132 @@
 
 A lightweight, locally managed Raspberry Pi digital-signage player built to replace an unreliable piSignage deployment.
 
-**Current version: 0.3.0-rc1 — hardware-tested release candidate**
+**Current development line: main — 0.3.0-rc6**
 
-## Hardware-tested baseline
+## Validated baseline
 
-The current release candidate has been tested on a Raspberry Pi 4 Model B running Debian GNU/Linux 13 (trixie), labwc/Wayland and Chromium. The tested hardware flow includes:
+Pi Player Appliance v1 has been validated on a Raspberry Pi 4 Model B with a 32 GB SD card running Debian GNU/Linux 13 (trixie), aarch64, labwc/Wayland and Chromium.
 
-- automatic tty1 login and labwc kiosk startup;
-- API startup before Chromium opens;
+Validated functions include:
+
+- clean-card installation;
+- dedicated internal `pi-player` kiosk account;
+- SSH installed and enabled;
+- mandatory first-time web provisioning;
+- separate web administrator and SSH/support credentials;
+- configurable hostname, default `pi-player`;
+- DHCP-first networking;
+- five-second startup/network splash;
+- automatic kiosk startup;
+- API/Chromium watchdog;
 - playlist recovery after reboot;
-- persistent local image assets across reboot;
+- persistent local image and video assets;
 - image Fit / Fill / Stretch modes;
+- MP4/WebM video upload and playback;
+- unattended Chromium video autoplay;
+- automatic video timing to natural media completion;
+- explicit video-media cleanup between playlist items;
+- stalled-video detection, one controlled recovery attempt and safe playlist continuation;
 - website Embed and controlled Direct playback;
-- per-playlist-item display time;
-- website zoom, test-link and page-reload options;
-- portable playlist export/import including local image files;
-- asset integrity checks and scheduled health monitoring.
+- per-item display time for images and websites;
+- website zoom, test-link and reload options;
+- upload progress/error feedback;
+- portable playlist export/import;
+- asset-integrity checks and scheduled health monitoring.
 
-## Features
+## Release candidate
 
-### Assets
+### 0.3.0-rc5
 
-- Upload image assets and store them under `/var/lib/pi-player/assets`.
-- Image display modes:
-  - **Fit** — whole image visible, aspect ratio preserved.
-  - **Fill** — fills the display, aspect ratio preserved, cropping allowed.
-  - **Stretch** — fills the display exactly and may distort the image.
-- Add website-link assets.
-- Website display modes:
-  - **Embed** — website displayed inside the local player.
-  - **Direct** — website opened in a controlled Chromium window/tab while the local playlist controller remains active.
-- Website zoom from 50% to 200% for Embed mode.
-- Website page reload options.
-- Test Link action from the admin page.
+RC5 is the current Appliance v1 soak-test candidate. It adds the resilient video playback lifecycle required for unattended signage operation.
 
-### Playlists
+Video items use **Auto** display timing and normally advance when the media reaches its natural end. Chromium is launched with unattended autoplay enabled for the dedicated kiosk session. During playback Pi Player monitors actual video progress. If progress stops for 15 seconds, one controlled `play()` recovery is attempted. If the video remains stalled, Pi Player explicitly pauses the media, detaches its source, clears video monitoring timers, removes the video element and continues safely to the next playlist item. A natural-duration plus 60-second safety ceiling provides an additional failsafe for non-looping video.
 
-- Create multiple playlists.
-- Add image and website assets in any order.
-- Set **Display time (seconds)** independently for every playlist item.
-- Enable or disable individual playlist items.
-- Activate one playlist at a time.
-- Export a playlist as a portable `.pi-player.zip` package.
-- Import a playlist package on another player without rebuilding it manually.
+The current RC5 build is undergoing extended unattended soak testing before the video implementation is considered hardware-validated.
 
-Playlist packages include:
+## First-time appliance setup
 
-- playlist name and item order;
-- per-item display time and enabled state;
-- image Fit / Fill / Stretch mode;
-- website Embed / Direct mode;
-- website zoom and page-reload settings;
-- the actual local image files used by the playlist;
-- checksums for imported image validation.
+A fresh appliance starts on DHCP with hostname `pi-player`. Open the displayed admin address:
 
-Imported playlists are intentionally created **inactive** so they cannot unexpectedly replace the playlist currently playing.
+```text
+http://<pi-address>:8000/
+```
+
+While the appliance is unconfigured, normal administration is blocked and the browser is redirected to the First-Time Setup wizard.
+
+Temporary bootstrap credentials:
+
+- Username: `pi`
+- Password: `pi`
+
+First-Time Setup creates:
+
+1. new Pi Player web-administrator credentials;
+2. a separate SSH/support username and password;
+3. the final player hostname.
+
+Web and SSH/support passwords require at least 9 characters. After successful provisioning, the temporary web credentials no longer provide normal administration access and the setup wizard is disabled. The internal `pi-player` kiosk account remains separate from the support account.
+
+Static IPv4 configuration is performed after provisioning from normal administration; DHCP is the deployment default.
+
+## Assets
+
+Images and uploaded videos are stored persistently under `/var/lib/pi-player/assets`.
+
+Images support:
+
+- **Fit** — whole image visible with aspect ratio preserved;
+- **Fill** — display filled with cropping allowed;
+- **Stretch** — display filled exactly, distortion allowed.
+
+Video assets currently support MP4 and WebM uploads. Video playlist items use **Auto** timing: non-looping video advances on natural media completion rather than an arbitrary slide duration. Video playback includes explicit media cleanup and stall recovery for unattended operation.
+
+Website assets support **Embed** and controlled **Direct** modes, configurable zoom, page reload and Test Link.
+
+PDF assets are planned but are not yet part of the current RC5 implementation.
+
+## Playlists and backup
+
+Playlists support mixed image, video and website assets, item enable/disable and one active playlist at a time. Images and websites use configurable display time; video uses automatic natural-duration playback.
+
+A playlist can be exported as a portable `.pi-player.zip` package and imported onto another player. The established package workflow preserves playlist/item configuration and local packaged assets supported by the exporter. Imported playlists are created inactive until explicitly activated.
+
+The original image/website export/import workflow has been validated on the Appliance v1 hardware test player after reboot. Video playback itself is currently under RC5 soak testing; full portable-package validation for video remains a milestone before the appliance image is finalized.
 
 ## Reliability design
-
-Persistent runtime data is separated from application code:
 
 ```text
 /opt/pi-player-rk/          application code
 /var/lib/pi-player/
   pi_player.sqlite3         metadata/settings/playlists
   assets/                   persistent uploaded files
-  tmp/                      temporary uploads/imports/exports
-/var/log/pi-player/         application logs
+  tmp/                      temporary work area
+/var/log/pi-player/         logs
 ```
 
-The installer may replace `/opt/pi-player-rk` during an upgrade but does **not** delete `/var/lib/pi-player`.
+Application upgrades may replace `/opt/pi-player-rk` but do not delete `/var/lib/pi-player`.
 
-Uploaded images are written to a temporary file, size checked, SHA-256 hashed, moved atomically into the persistent asset directory, and only then committed to SQLite.
+Uploaded local media is staged and committed into persistent storage before being referenced by the player. Asset integrity is checked at startup and every 15 minutes. Missing files, size/checksum mismatches, orphan files and temporary files are reported rather than silently deleted.
 
-Asset integrity is checked at startup and every 15 minutes. Missing files, size mismatches, checksum mismatches, orphan files and temporary files are reported rather than silently deleted.
+Appliance mode installs a watchdog that checks the local API and Chromium/kiosk process state and performs targeted recovery. Video playback has an additional player-level recovery layer so a stalled media element does not permanently stop the playlist.
 
-## Fresh Raspberry Pi install
+## Appliance development install
 
-The preferred deployment path is the bootstrap installer. It installs Git first, downloads or refreshes the repository, and then runs the full Pi Player installer.
-
-If `bootstrap-install.sh` is already present on the Pi:
+The current development workflow starts from a clean Debian/Raspberry Pi OS installation. The planned production deployment method is a prebuilt flashable SD-card image.
 
 ```bash
-sudo -E PI_PLAYER_USER=richard bash bootstrap-install.sh
-sudo reboot
+sudo -E \
+  PI_PLAYER_BRANCH=main \
+  PI_PLAYER_APPLIANCE=1 \
+  PI_PLAYER_USER=<bootstrap_user> \
+  ./bootstrap-install.sh
 ```
 
-Replace `richard` with the desktop/kiosk user on the target Pi.
+The installer provides Git, CA certificates, curl, Python/venv, Chromium, labwc, seatd, NetworkManager, OpenSSH and Pi Player services. It creates the dedicated kiosk account, configures tty1/labwc startup, enables API/health/watchdog services, generates an appliance-specific session secret and prepares first-time provisioning on a fresh appliance database.
 
-The bootstrap installer:
+## Proxy environments
 
-1. installs Git, CA certificates and curl;
-2. clones or refreshes `https://github.com/dmseclab/pi-player.git`;
-3. calls `deploy/install.sh` with the selected Pi Player user.
-
-The main installer then:
-
-1. installs Python, venv, pip, rsync, logrotate, Chromium, labwc, seatd, dbus-user-session and xwayland;
-2. copies the application to `/opt/pi-player-rk`;
-3. creates persistent data and log directories;
-4. installs and restarts the API service;
-5. enables the 15-minute health timer;
-6. configures the labwc Chromium kiosk launcher for the selected user.
-
-## Proxy install example
-
-If your environment requires a no-authentication HTTP proxy, export both lowercase and uppercase proxy variables before running the installer. Replace `<your_proxy_ip>` and `<proxy_port>` with values appropriate for your network:
+Pi Player contains no site-specific proxy address. Supply a proxy externally when required:
 
 ```bash
 export http_proxy=http://<your_proxy_ip>:<proxy_port>
@@ -116,167 +136,80 @@ export HTTP_PROXY=http://<your_proxy_ip>:<proxy_port>
 export HTTPS_PROXY=http://<your_proxy_ip>:<proxy_port>
 export no_proxy=127.0.0.1,localhost
 export NO_PROXY=127.0.0.1,localhost
-
-sudo -E PI_PLAYER_USER=richard bash bootstrap-install.sh
 ```
 
-`sudo -E` is important because it preserves the proxy environment for `apt`, `git`, `pip` and other installer commands.
+Use `sudo -E` so installer subprocesses inherit the proxy. Local Pi Player traffic should bypass the proxy. Where HTTPS inspection is used, install the organisation CA in the operating-system trust store; disabling TLS verification is not part of the production appliance design.
 
-The kiosk and Pi Player local API use `127.0.0.1` directly and should bypass the proxy.
-
-## Manual repository install
-
-If Git is already installed and the repository is already cloned:
-
-```bash
-git clone https://github.com/dmseclab/pi-player.git
-cd pi-player
-sudo -E PI_PLAYER_USER=richard ./deploy/install.sh
-sudo reboot
-```
-
-For upgrades on an existing test/player Pi:
-
-```bash
-cd ~/pi-player
-git pull
-sudo -E PI_PLAYER_USER=richard ./deploy/install.sh
-```
-
-The installer restarts the API service after an upgrade so updated routes and application code become active immediately.
-
-## Kiosk startup
-
-The player uses labwc/Wayland and Chromium. The kiosk launcher waits for the local health endpoint before opening Chromium, preventing a temporary `127.0.0.1 refused to connect` page during boot.
-
-Typical startup flow:
+## Startup flow
 
 ```text
 Pi boot
-  -> tty1 autologin
+  -> tty1 autologin (internal pi-player account)
   -> dbus-run-session labwc
   -> labwc autostart
   -> launch-kiosk.sh
-  -> wait for /api/health
-  -> Chromium kiosk
-  -> /player
+  -> wait for local API health
+  -> Chromium kiosk (unattended autoplay enabled)
+  -> startup information splash (5 seconds)
+  -> active playlist
 ```
 
-## First login
+With no playable playlist, the player remains on its information/ready screen.
 
-Open the admin interface from another PC:
-
-```text
-http://<pi-address>:8000/
-```
-
-Default web login:
-
-- Username: `pi`
-- Password: `pi`
-
-Change the default web password before production use. Also replace the placeholder `PI_PLAYER_SESSION_SECRET` in the API service for production deployment.
-
-## Health checks
-
-Quick local health check:
+## Health and service checks
 
 ```bash
 curl --noproxy '*' -s http://127.0.0.1:8000/api/health
-```
-
-A healthy response resembles:
-
-```json
-{
-  "ok": true,
-  "version": "0.3.0-rc1",
-  "missing_assets": 0,
-  "size_mismatch": 0,
-  "orphan_files": 0,
-  "temp_files": 0
-}
-```
-
-Manual checksum verification:
-
-```bash
-cd /opt/pi-player-rk
-sudo -u richard \
-  PI_PLAYER_DATA_DIR=/var/lib/pi-player \
-  PI_PLAYER_LOG_DIR=/var/log/pi-player \
-  .venv/bin/python -m pi_player.health_check --checksum
-```
-
-Replace `richard` with the installed Pi Player user.
-
-Useful service commands:
-
-```bash
 sudo systemctl status pi-player-api.service
 sudo systemctl status pi-player-health.timer
+sudo systemctl status pi-player-watchdog.timer
 sudo journalctl -u pi-player-api.service -f
-sudo systemctl start pi-player-health.service
-systemctl cat pi-player-api.service | grep ExecStart
 ```
 
-## Playlist backup and recovery
+## Website behavior
 
-To move a playlist to another display:
+**Embed** keeps the site inside Pi Player and supports player zoom. Sites that prohibit iframe embedding should use Direct mode.
 
-1. Open **Playlists**.
-2. Click **Export** on the playlist.
-3. Save the generated `.pi-player.zip` file.
-4. On the replacement Pi, click **Import Playlist Package**.
-5. Select the exported package.
-6. Review the imported inactive playlist.
-7. Click **Activate** when satisfied.
+**Direct** opens the target in a controlled Chromium window/tab for the configured item duration. The local controller remains alive and returns to the playlist afterwards. Website login sessions remain Chromium's responsibility; Pi Player does not store website credentials in asset configuration.
 
-If an imported playlist has the same name as an existing playlist, Pi Player creates a unique name such as `Playlist (2)`.
+## Appliance v1 hardware validation
 
-## Website behavior notes
+Confirmed on the test Raspberry Pi 4B:
 
-### Embed
+- clean installation;
+- appliance branch deployment;
+- kiosk-account creation;
+- SSH enablement;
+- first-time setup enforcement and temporary-login validation;
+- new web-admin credential provisioning;
+- SSH/support-account provisioning;
+- hostname provisioning;
+- reboot after provisioning;
+- normal operation after reboot;
+- playlist package import;
+- playlist playback after import;
+- image playback and display modes;
+- video upload and playlist insertion;
+- automatic video display-time UI;
+- unattended video autoplay after clean boot;
+- natural-end video advancement.
 
-Embed mode keeps the website inside the Pi Player page and supports Pi Player zoom control. Some sites prohibit iframe embedding through browser security headers; those sites should use Direct mode instead.
+RC5 stall recovery and long-duration unattended video operation are currently being soak tested and are therefore not yet listed as completed hardware validation.
 
-### Direct
+## Next milestones
 
-Direct mode opens the target website in a controlled Chromium window/tab for the configured playlist-item display time. The local Pi Player controller remains alive and closes the Direct website before moving to the next playlist item.
+The appliance foundation is validated and video is in RC5 soak testing. Planned next work:
 
-Website login sessions are handled by Chromium. Pi Player intentionally does not store website usernames or passwords in asset configuration.
+- complete RC5 unattended video soak test and inspect recovery logs;
+- validate portable playlist package handling for video;
+- PDF assets and PDF playlist playback;
+- playlist package support for PDF;
+- final System/Network administration validation;
+- flashable Raspberry Pi SD-card image;
+- automatic first-boot filesystem expansion and per-device initialization;
+- clean-image acceptance test: **flash -> insert -> Ethernet/HDMI -> power on -> provision -> import playlist -> play**.
 
-## Hardware release-candidate validation checklist
-
-Before deploying a newly built Pi:
-
-1. Reboot and confirm Chromium opens the player automatically.
-2. Confirm the admin page reports the correct LAN IP.
-3. Upload an image and verify Fit, Fill and Stretch.
-4. Verify an Embed website rotates correctly.
-5. Verify a Direct website returns to the next playlist item.
-6. Verify different playlist-item display times.
-7. Reboot and confirm the active playlist resumes automatically.
-8. Confirm all local image assets remain present after reboot.
-9. Export the active playlist and import it as a test copy.
-10. Confirm website zoom and reload settings survive export/import.
-11. Run `/api/health` and confirm asset-integrity counters are clean.
-
-## Current scope
-
-The 0.3.0-rc1 release candidate supports image and website signage, playlist timing, portable playlist backup/recovery, local health monitoring and a Raspberry Pi kiosk deployment workflow.
-
-Not currently included:
-
-- video or PDF assets;
-- fleet/cloud management;
-- full-device backup/restore;
-- advanced schedule/calendar playback;
-- website keystroke automation;
-- custom authentication headers;
-- website auto-scroll.
-
-These are intentionally excluded from the first release candidate to keep the player small, understandable and reliable.
+Automatic application updates are intentionally excluded. Updates remain administrator-initiated through the admin interface or SSH.
 
 ## Local development
 
@@ -288,3 +221,26 @@ python -m uvicorn pi_player.application:app --reload --host 127.0.0.1 --port 800
 ```
 
 Development runtime data defaults to `./data`.
+
+### PDF signage
+
+Upload images or PDFs under **Assets → Upload Media**. PDFs use a configurable
+**PDF seconds per page** timer (default 10 seconds; editable on the asset).
+Pages render fullscreen, fitted to the display, without viewer controls. After
+the last page, the PDF loops until its playlist item duration ends. The slot
+starts once the first page renders; allow at least page count × seconds per page
+if every page should be shown. Each return to the PDF starts at page 1.
+
+Missing, corrupt and password protected PDFs are skipped. PDF files and page
+timers are included in playlist export/import. Existing databases automatically
+migrate their asset type constraint while retaining assets and playlist links.
+
+PDF.js 6.4.299 is bundled under `static/vendor/pdfjs` with its Apache-2.0 license,
+fonts, character maps and WASM helpers. Playback requires no external CDN.
+
+### Consolidated main branch (0.3.0-rc6)
+
+`main` now includes the RC5 appliance foundation, video playback and PDF signage.
+Existing appliance installations retain setup state, watchdog behavior, video audio
+and loop settings, playlist links and uploaded files. Updates should copy application
+code while preserving the virtual environment, runtime data and system configuration.

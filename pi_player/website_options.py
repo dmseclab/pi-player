@@ -88,6 +88,7 @@ def player_playlist_with_website_options() -> dict[str, Any]:
                 assets.display_mode AS asset_display_mode,
                 assets.zoom_percent AS asset_zoom_percent,
                 assets.reload_seconds AS asset_reload_seconds,
+                assets.pdf_page_seconds AS asset_pdf_page_seconds,
                 assets.mime_type AS asset_mime_type,
                 assets.storage_path AS asset_storage_path,
                 assets.size_bytes AS asset_size_bytes
@@ -104,8 +105,8 @@ def player_playlist_with_website_options() -> dict[str, Any]:
         from pathlib import Path
         for item in items:
             item["enabled"] = bool(item["enabled"])
-            item["media_url"] = f"/media/{item['asset_id']}" if item["asset_type"] == "image" else None
-            if item["asset_type"] == "image":
+            item["media_url"] = f"/media/{item['asset_id']}" if item["asset_type"] in {"image", "pdf"} else None
+            if item["asset_type"] in {"image", "pdf"}:
                 path = Path(item["asset_storage_path"]).resolve() if item.get("asset_storage_path") else None
                 item["asset_file_present"] = bool(path and path.is_file() and ASSET_DIR.resolve() in path.parents)
             else:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -47,6 +48,31 @@ def rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
 
 def init_db() -> None:
     ensure_runtime_dirs()
+    # Rebuild only the legacy CHECK constraint, keeping every existing column.
+    conn = connect()
+    try:
+        schema = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='assets'").fetchone()
+        if schema and ("'pdf'" not in schema["sql"] or "'video'" not in schema["sql"]):
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute("BEGIN IMMEDIATE")
+            indexes = conn.execute("SELECT sql FROM sqlite_master WHERE tbl_name='assets' AND sql IS NOT NULL AND type IN ('index', 'trigger')").fetchall()
+            sql = re.sub(r'CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["`\[]?assets["`\]]?',
+                         "CREATE TABLE assets_pdf", schema["sql"], count=1, flags=re.I)
+            sql, count = re.subn(r"CHECK\s*\(\s*type\s+IN\s*\([^)]*\)\s*\)",
+                                "CHECK (type IN ('image', 'website', 'video', 'pdf'))", sql, count=1, flags=re.I)
+            if count != 1:
+                raise RuntimeError("Unrecognized assets type constraint; migration aborted")
+            conn.execute(sql)
+            conn.execute("INSERT INTO assets_pdf SELECT * FROM assets")
+            conn.execute("DROP TABLE assets")
+            conn.execute("ALTER TABLE assets_pdf RENAME TO assets")
+            for entry in indexes:
+                conn.execute(entry["sql"])
+            if conn.execute("PRAGMA foreign_key_check").fetchall():
+                raise RuntimeError("PDF migration failed foreign key validation")
+            conn.commit()
+    finally:
+        conn.close()
     with db() as conn:
         conn.executescript(
             """
@@ -58,7 +84,7 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS assets (
                 id TEXT PRIMARY KEY,
-                type TEXT NOT NULL CHECK (type IN ('image', 'website')),
+                type TEXT NOT NULL CHECK (type IN ('image', 'website', 'video', 'pdf')),
                 name TEXT NOT NULL,
                 original_filename TEXT,
                 storage_path TEXT,
@@ -115,6 +141,9 @@ def init_db() -> None:
         set_default(conn, "admin_password_hash", hash_password(DEFAULT_PASSWORD))
         set_default(conn, "max_upload_mb", str(DEFAULT_MAX_UPLOAD_MB))
         ensure_column(conn, "assets", "display_mode", "TEXT NOT NULL DEFAULT 'embed'")
+        ensure_column(conn, "assets", "pdf_page_seconds", "INTEGER NOT NULL DEFAULT 10")
+        ensure_column(conn, "assets", "video_muted", "INTEGER NOT NULL DEFAULT 1")
+        ensure_column(conn, "assets", "video_loop", "INTEGER NOT NULL DEFAULT 0")
         conn.execute(
             "INSERT OR IGNORE INTO playback_state (id, state, updated_at) VALUES (1, 'stopped', ?)",
             (now_iso(),),

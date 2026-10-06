@@ -1,0 +1,7 @@
+[Unit]
+Description=Pi Player appliance watchdog
+After=pi-player-api.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/pi-player-rk/deploy/pi-player-watchdog.sh

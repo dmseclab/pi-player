@@ -113,10 +113,10 @@ async function loadAssets() {
       <tbody>
         ${state.assets.map((asset) => state.editingAssetId === asset.id ? renderAssetEditRow(asset) : `
           <tr>
-            <td>${asset.type === "image" ? `<img class="asset-preview" src="${asset.media_url}" alt="">` : `<span class="pill">Web</span>`}</td>
+            <td>${asset.type === "image" ? `<img class="asset-preview" src="${asset.media_url}" alt="">` : `<span class="pill">${asset.type === "pdf" ? "PDF" : "Web"}</span>`}</td>
             <td>${escapeHtml(asset.name)}</td>
             <td>${escapeHtml(asset.type)}</td>
-            <td class="muted">${asset.type === "website" ? `${escapeHtml(asset.url)}<br><span class="pill">${escapeHtml(asset.display_mode || "embed")}</span>` : escapeHtml(bytes(asset.size_bytes))}</td>
+            <td class="muted">${asset.type === "website" ? `${escapeHtml(asset.url)}<br><span class="pill">${escapeHtml(asset.display_mode || "embed")}</span>` : escapeHtml(bytes(asset.size_bytes)) + (asset.type === "pdf" ? `<br>${asset.pdf_page_seconds} seconds/page` : "")}</td>
             <td>
               <button data-edit-asset="${asset.id}">Edit</button>
               <button class="danger" data-delete-asset="${asset.id}">Delete</button>
@@ -131,7 +131,7 @@ async function loadAssets() {
 function renderAssetEditRow(asset) {
   return `
     <tr data-editing-asset="${asset.id}">
-      <td>${asset.type === "image" ? `<img class="asset-preview" src="${asset.media_url}" alt="">` : `<span class="pill">Web</span>`}</td>
+      <td>${asset.type === "image" ? `<img class="asset-preview" src="${asset.media_url}" alt="">` : `<span class="pill">${asset.type === "pdf" ? "PDF" : "Web"}</span>`}</td>
       <td>
         <input data-asset-edit-name value="${escapeAttr(asset.name)}" aria-label="Asset name">
       </td>
@@ -143,7 +143,7 @@ function renderAssetEditRow(asset) {
                <option value="embed" ${(asset.display_mode || "embed") === "embed" ? "selected" : ""}>Embed</option>
                <option value="direct" ${asset.display_mode === "direct" ? "selected" : ""}>Direct</option>
              </select>`
-          : `<span class="muted">${escapeHtml(bytes(asset.size_bytes))}</span>`}
+          : asset.type === "pdf" ? `<label>Seconds per page <input data-asset-edit-pdf-seconds type="number" min="1" max="86400" value="${asset.pdf_page_seconds || 10}"></label>` : `<span class="muted">${escapeHtml(bytes(asset.size_bytes))}</span>`}
       </td>
       <td>
         <button class="primary" data-save-asset="${asset.id}">Save</button>
@@ -255,6 +255,7 @@ document.addEventListener("click", async (event) => {
       payload.url = row.querySelector("[data-asset-edit-url]").value.trim();
       payload.display_mode = row.querySelector("[data-asset-edit-display-mode]").value;
     }
+    if (asset.type === "pdf") payload.pdf_page_seconds = Number(row.querySelector("[data-asset-edit-pdf-seconds]").value);
     await api(`/api/assets/${asset.id}`, { method: "PUT", body: JSON.stringify(payload) });
     state.editingAssetId = null;
     await Promise.all([loadAssets(), loadPlaylists(), loadStatus()]);

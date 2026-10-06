@@ -38,5 +38,6 @@ exec "$BROWSER" \
   --disable-sync \
   --no-first-run \
   --start-maximized \
+  --autoplay-policy=no-user-gesture-required \
   --ozone-platform=wayland \
   "$URL"
