@@ -1,48 +1,30 @@
-// Run with jsdom available on NODE_PATH: node tests/test_admin_observers.cjs
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
-const { execFileSync } = require('node:child_process');
-const { JSDOM } = require('jsdom');
-const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
-const root = path.resolve(__dirname, '..');
-const dom = new JSDOM(`<!doctype html><body>
-<form id="upload-form"><h2>Upload</h2><label for="asset-file">File</label><input id="asset-file" type="file"><div class="asset-actions"></div></form>
-<div id="asset-list"><table><tbody><tr><td><span>Web</span></td><td>Clip</td><td>video</td><td>Details</td><td><button data-edit-asset="clip">Edit</button></td></tr></tbody></table></div>
-<div id="playlist-list"><section class="panel"><form data-add-item="playlist"><select name="asset_id"><option value="image">Image (image)</option><option value="clip">Clip (video)</option></select><input name="duration_seconds" value="15"></form>
-<table class="table"><thead><tr><th>Pos</th><th>Asset</th><th>Duration</th></tr></thead><tbody><tr><td>0</td><td>Clip</td><td><input data-item-duration="playlist:item" value="15"></td></tr></tbody></table></section></div>
-</body>`, { runScripts:'outside-only', pretendToBeVisual:true });
-const w = dom.window;
-w.eval(`window.state={assets:[{id:'clip',name:'Clip',type:'video',display_mode:'fit',video_muted:true,video_loop:false},{id:'image',name:'Image',type:'image'}]};function escapeHtml(v){return String(v);}`);
-let mutations=0;
-const observer=new w.MutationObserver(records=>{mutations+=records.length;});
-observer.observe(w.document.body,{childList:true,subtree:true});
-for(const file of ['video-ui.js','playlist-timer.js']) {
-  const code=process.env.PI_UI_BASE_REF
-    ? execFileSync('git',['show',`${process.env.PI_UI_BASE_REF}:static/${file}`],{cwd:root,encoding:'utf8'})
-    : fs.readFileSync(path.join(root,'static',file),'utf8');
-  w.eval(code);
-}
-async function settles(label) {
-  await wait(250);
-  const before=mutations;
-  await wait(150);
-  assert.equal(mutations,before,`${label}: DOM kept changing without user input`);
-}
-(async()=>{
-  await settles('Initial render');
-  const doc=w.document,select=doc.querySelector('select[name="asset_id"]');
-  select.value='clip';select.dispatchEvent(new w.Event('change'));
-  await settles('Select video');
-  assert.equal(doc.querySelector('input[name="duration_seconds"]').disabled,true);
-  assert.equal(doc.querySelector('[data-video-auto-duration]').value,'15');
-  select.value='image';select.dispatchEvent(new w.Event('change'));
-  await settles('Select image');
-  assert.equal(doc.querySelector('input[name="duration_seconds"]').disabled,false);
-  assert.equal(doc.querySelector('[data-video-auto-duration]'),null);
-  // A fresh API render must enhance once and then settle again.
-  doc.querySelector('#asset-list tbody').innerHTML='<tr data-editing-asset="clip"><td>Web</td><td>Clip</td><td>video</td><td>Details</td><td><button data-save-asset="clip">Save</button></td></tr>';
-  await settles('Edit video');
-  assert.equal(doc.querySelectorAll('[data-video-settings]').length,1);
-  console.log('PASS: observers settle after render, video/image selection and editing');
-})().catch(error=>{console.error(error.message);process.exitCode=1;}).finally(()=>{observer.disconnect();w.close();});
+const {JSDOM}=require('jsdom'),fs=require('fs'),assert=require('assert');
+const root=require('node:path').resolve(__dirname,'..');
+const html=fs.readFileSync(root+'/static/admin.html','utf8');
+const scripts=[...html.matchAll(/<script src="\/static\/([^"?]+)(?:\?[^" ]*)?"><\/script>/g)].map(m=>m[1]);
+const assets=Array.from({length:30},(_,i)=>({id:'asset'+i,type:['image','video','pdf','website'][i%4],name:'Asset '+i,media_url:'/media/'+i,url:'https://example.com',display_mode:'fit',size_bytes:100,pdf_page_seconds:10,video_muted:true}));
+const playlists=[{id:'playlist',name:'Test',is_active:true,items:assets.map((a,i)=>({id:'item'+i,asset_id:a.id,asset_name:a.name,position:i,duration_seconds:15,enabled:true}))}];
+const status={player_name:'Test',playback:{state:'playing'},disk:{total:100,used:50,free:50},ip_addresses:['192.168.1.2'],version:'rc8'};
+const dom=new JSDOM(html.replace(/<script.*?<\/script>/g,''),{runScripts:'dangerously',pretendToBeVisual:true,url:'http://192.168.1.2:8000/'});
+const w=dom.window;
+w.fetch=async p=>({ok:true,status:200,text:async()=>JSON.stringify(p==='/api/assets'?assets:p==='/api/playlists'?playlists:p==='/api/status'?status:p==='/api/settings'?{player_name:'Test',max_upload_mb:500,admin_username:'pi'}:p==='/api/logs'?[]:{})});
+let mutations=0;const obs=new w.MutationObserver(rs=>mutations+=rs.length);obs.observe(w.document.body,{childList:true,subtree:true});
+for(const file of scripts){const s=w.document.createElement('script');s.textContent=fs.readFileSync(root+'/static/'+file,'utf8');w.document.body.appendChild(s);}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+(async()=>{await wait(600);const first=mutations;await wait(300);assert.equal(mutations,first,'Full admin did not settle');w.document.querySelector('[data-tab="assets"]').click();assert.equal(w.document.querySelector('#tab-assets').classList.contains('hidden'),false);w.document.querySelector('#refresh-assets').click();await wait(400);const second=mutations;await wait(300);assert.equal(mutations,second,'Refresh did not settle');assert.equal(w.document.querySelectorAll('script').length,3);
+  assert.ok(!scripts.some(file=>/video-ui|playlist-timer|image-mode/.test(file)));
+  const video=assets.find(a=>a.type==='video');
+  w.document.querySelector(`[data-edit-asset="${video.id}"]`).click();await wait(100);
+  assert.ok(w.document.querySelector('[data-video-muted]'));
+  assert.ok(w.document.querySelector('[data-video-loop]'));
+  w.document.querySelector(`[data-cancel-asset-edit="${video.id}"]`).click();await wait(100);
+  const pdf=assets.find(a=>a.type==='pdf');
+  w.document.querySelector(`[data-edit-asset="${pdf.id}"]`).click();await wait(100);
+  assert.ok(w.document.querySelector('[data-asset-edit-pdf-once]'));
+  const select=w.document.querySelector('[data-add-item] select');
+  select.value=video.id;select.dispatchEvent(new w.Event('change',{bubbles:true}));
+  assert.equal(select.closest('form').querySelector('[name="duration_seconds"]').disabled,true);
+  select.value=pdf.id;select.dispatchEvent(new w.Event('change',{bubbles:true}));
+  assert.equal(select.closest('form').querySelector('[name="duration_seconds"]').disabled,false);
+  await wait(250);const final=mutations;await wait(150);assert.equal(mutations,final);
+  console.log('PASS: direct admin rendering, mixed assets, refresh, edit controls and automatic timing');})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>{obs.disconnect();w.close()});

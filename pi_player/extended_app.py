@@ -188,8 +188,8 @@ def update_asset_with_display_mode(
             )
         elif asset["type"] == "pdf":
             conn.execute(
-                "UPDATE assets SET name = ?, pdf_page_seconds = ?, updated_at = ? WHERE id = ?",
-                (payload.name.strip(), payload.pdf_page_seconds or asset["pdf_page_seconds"], now_iso(), asset_id),
+                "UPDATE assets SET name = ?, pdf_page_seconds = ?, pdf_play_once = ?, updated_at = ? WHERE id = ?",
+                (payload.name.strip(), payload.pdf_page_seconds or asset["pdf_page_seconds"], int(payload.pdf_play_once if payload.pdf_play_once is not None else asset["pdf_play_once"]), now_iso(), asset_id),
             )
         else:
             current_mode = asset["display_mode"] if asset["display_mode"] in IMAGE_DISPLAY_MODES else "fit"

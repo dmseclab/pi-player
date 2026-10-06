@@ -1,22 +1,122 @@
-const stage=document.querySelector("#stage");let playlistSignature="",items=[],index=0,timer=null,reloadTimer=null,directWindow=null,bootSplashUntil=Date.now()+5000,playerInfo=null,currentVideo=null,videoMonitor=null,videoHardTimer=null,stopPdf=null;
-function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));}
-async function loadPlayerInfo(){try{playerInfo=await (await fetch("/api/player/info",{cache:"no-store"})).json();}catch(_){playerInfo=null;}}
-function splash(waiting=false){const ip=playerInfo?.ip_addresses?.[0]||"Waiting for network...";const host=playerInfo?.hostname||"pi-player";const setup=playerInfo?.setup_required;stage.innerHTML=`<div class="player-message"><div style="font-size:2em;font-weight:700;margin-bottom:.6em">PI PLAYER</div><div>Hostname: ${escapeHtml(host)}</div><div>IP Address: ${escapeHtml(ip)}</div><div>Admin: ${ip.includes(".")?`http://${escapeHtml(ip)}:8000`:"Waiting for network..."}</div><div style="margin-top:1em">${setup?"First-time setup required":waiting?"Ready for configuration":"Starting playlist..."}</div></div>`;}
-function signature(d){return JSON.stringify({state:d.state,playlist:d.playlist?.id,items:d.items.filter(i=>i.enabled).map(i=>[i.id,i.position,i.duration_seconds,i.enabled,i.asset_id,i.asset_type,i.asset_url,i.media_url,i.asset_display_mode,i.asset_zoom_percent,i.asset_reload_seconds,i.asset_video_muted,i.asset_video_loop,i.asset_pdf_page_seconds,i.asset_file_present])});}
-async function loadPlaylist(){try{if(!playerInfo)await loadPlayerInfo();const d=await(await fetch("/api/player/playlist",{cache:"no-store"})).json();const s=signature(d);if(s!==playlistSignature){playlistSignature=s;items=d.state==="playing"?d.items.filter(i=>i.enabled):[];index=0;playCurrent();}else if(!items.length)splash(true);}catch(err){console.error("Pi Player playlist refresh failed",err);splash(true);}}
-function objectFit(m){return m==="fill"?"cover":m==="stretch"?"fill":"contain";}function clearWebsiteReload(){if(reloadTimer)clearInterval(reloadTimer);reloadTimer=null;}function closeDirectWindow(){if(!directWindow)return;try{if(!directWindow.closed)directWindow.close();}catch(_){}directWindow=null;try{window.focus();}catch(_){}}
-function applyEmbedZoom(f,z){const n=Math.min(200,Math.max(50,Number(z||100)))/100;f.style.transformOrigin="top left";f.style.transform=`scale(${n})`;f.style.width=`${100/n}vw`;f.style.height=`${100/n}vh`;}
-function cleanupCurrentVideo(){if(videoMonitor){clearInterval(videoMonitor);videoMonitor=null;}if(videoHardTimer){clearTimeout(videoHardTimer);videoHardTimer=null;}const video=currentVideo||document.querySelector("#player-video");currentVideo=null;if(!video)return;try{video.pause();}catch(_){}try{video.removeAttribute("src");video.load();}catch(_){}try{video.remove();}catch(_){} }
-function videoFailure(video,reason){const code=video?.error?.code||0;console.error("Pi Player video playback failed",{reason:String(reason||"unknown"),code,src:video?.currentSrc||video?.src||""});cleanupCurrentVideo();stage.innerHTML=`<div class="player-message"><div>Video playback error</div><div>${escapeHtml(String(reason||`Media error ${code}`))}</div></div>`;advanceSoon();}
-function playVideo(item,durationMs){if(item.asset_file_present===false||!item.media_url){console.error("Pi Player video missing",item);advanceSoon();return;}cleanupCurrentVideo();console.info("Pi Player video selected",{asset:item.asset_id,url:item.media_url,loop:!!item.asset_video_loop,muted:!!item.asset_video_muted});stage.innerHTML="";const video=document.createElement("video");currentVideo=video;video.id="player-video";video.autoplay=true;video.playsInline=true;video.preload="auto";video.muted=!!item.asset_video_muted;video.loop=!!item.asset_video_loop;video.style.objectFit=objectFit(item.asset_display_mode);let lastTime=0,lastProgress=Date.now(),recoveryAttempted=false,started=false;const noteProgress=()=>{const now=Number(video.currentTime||0);if(now>lastTime+0.05){lastTime=now;lastProgress=Date.now();recoveryAttempted=false;}};video.addEventListener("loadstart",()=>console.info("Pi Player video loadstart",item.asset_id),{once:true});video.addEventListener("loadedmetadata",()=>{console.info("Pi Player video metadata",{asset:item.asset_id,duration:video.duration,width:video.videoWidth,height:video.videoHeight});if(Number.isFinite(video.duration)&&video.duration>0&&!video.loop){videoHardTimer=setTimeout(()=>{if(currentVideo!==video)return;console.error("Pi Player video exceeded safety limit",{asset:item.asset_id,currentTime:video.currentTime,duration:video.duration});cleanupCurrentVideo();advanceSoon();},Math.ceil(video.duration*1000)+60000);}}, {once:true});video.addEventListener("playing",()=>{started=true;lastProgress=Date.now();console.info("Pi Player video playing",item.asset_id);});video.addEventListener("timeupdate",noteProgress);video.addEventListener("waiting",()=>console.warn("Pi Player video waiting",{asset:item.asset_id,currentTime:video.currentTime}));video.addEventListener("stalled",()=>console.warn("Pi Player video stalled event",{asset:item.asset_id,currentTime:video.currentTime}));video.addEventListener("pause",()=>{if(currentVideo===video&&!video.ended)console.warn("Pi Player video paused",{asset:item.asset_id,currentTime:video.currentTime});});video.addEventListener("error",()=>videoFailure(video,"Media element error"),{once:true});if(video.loop){timer=setTimeout(()=>{cleanupCurrentVideo();advance();},durationMs);}else{video.addEventListener("ended",()=>{console.info("Pi Player video ended",item.asset_id);cleanupCurrentVideo();advance();},{once:true});}stage.appendChild(video);video.src=`${item.media_url}?v=${encodeURIComponent(item.asset_id)}`;video.load();const start=()=>video.play().catch(err=>videoFailure(video,err?.message||err));if(video.readyState>=2)start();else video.addEventListener("canplay",start,{once:true});videoMonitor=setInterval(()=>{if(currentVideo!==video)return;if(video.ended)return;if(!started&&video.readyState<2)return;noteProgress();if(Date.now()-lastProgress<15000)return;if(!recoveryAttempted){recoveryAttempted=true;lastProgress=Date.now();console.warn("Pi Player video progress stalled; attempting recovery",{asset:item.asset_id,currentTime:video.currentTime,readyState:video.readyState,networkState:video.networkState});video.play().catch(err=>console.warn("Pi Player video recovery play failed",String(err?.message||err)));return;}console.error("Pi Player video progress stalled after recovery; skipping",{asset:item.asset_id,currentTime:video.currentTime,readyState:video.readyState,networkState:video.networkState});cleanupCurrentVideo();advanceSoon();},5000);}
-function playCurrent(){if(stopPdf)stopPdf();stopPdf=null;if(timer)clearTimeout(timer);timer=null;cleanupCurrentVideo();clearWebsiteReload();closeDirectWindow();if(Date.now()<bootSplashUntil){splash(false);timer=setTimeout(playCurrent,Math.max(100,bootSplashUntil-Date.now()));return;}if(!items.length){splash(true);return;}const item=items[index%items.length],durationMs=Math.max(1,item.duration_seconds)*1000,reloadSeconds=Math.max(0,Number(item.asset_reload_seconds||0));console.info("Pi Player item",{index,type:item.asset_type,name:item.asset_name,id:item.asset_id});if(item.asset_type==="image"){if(item.asset_file_present===false){advanceSoon();return;}stage.innerHTML=`<img id="player-image" src="${item.media_url}" alt="${escapeHtml(item.asset_name)}">`;const img=document.querySelector("#player-image");img.style.objectFit=objectFit(item.asset_display_mode);img.addEventListener("error",advanceSoon,{once:true});timer=setTimeout(advance,durationMs);return;}if(item.asset_type==="pdf"){
-    if(item.asset_file_present===false){advanceSoon();return;}
+const stage = document.querySelector('#stage');
+let playlistSignature='', items=[], index=0, timer=null, reloadTimer=null;
+let directWindow=null, currentVideo=null, videoMonitor=null, videoStartupTimer=null, videoHardTimer=null, stopPdf=null;
+let bootSplashUntil=Date.now()+5000, playerInfo=null, generation=0, refreshing=false, currentItem=null;
+let reportQueue=Promise.resolve(), lastProgressReport=0;
+const localKiosk=['127.0.0.1','localhost','[::1]'].includes(window.location.hostname);
+function escapeHtml(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
+function report(event, message=null, page=null) {
+  if(!localKiosk)return;
+  const body={event,asset_id:currentItem?.asset_id||null,message:message?String(message).slice(0,500):null,page};
+  reportQueue=reportQueue.catch(()=>{}).then(async()=>{
+    try {await fetch('/api/player/report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(3000)});}catch(_){}
+  });
+}
+async function loadPlayerInfo(){try{const r=await fetch('/api/player/info',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(r.ok)playerInfo=await r.json();}catch(_){}}
+function splash(waiting=false){const ip=playerInfo?.ip_addresses?.[0]||'Waiting for network...',host=playerInfo?.hostname||'pi-player';stage.innerHTML=`<div class="player-message"><div style="font-size:2em;font-weight:700;margin-bottom:.6em">PI PLAYER</div><div>Hostname: ${escapeHtml(host)}</div><div>IP Address: ${escapeHtml(ip)}</div><div>Admin: ${ip.includes('.')?`http://${escapeHtml(ip)}:8000`:'Waiting for network...'}</div><div style="margin-top:1em">${playerInfo?.setup_required?'First-time setup required':waiting?'Ready for configuration':'Starting playlist...'}</div></div>`;}
+function signature(d){return JSON.stringify({state:d.state,playlist:d.playlist?.id,items:d.items.filter(i=>i.enabled).map(i=>[i.id,i.position,i.duration_seconds,i.asset_id,i.asset_type,i.asset_url,i.media_url,i.asset_display_mode,i.asset_zoom_percent,i.asset_reload_seconds,i.asset_video_muted,i.asset_video_loop,i.asset_pdf_page_seconds,i.asset_pdf_play_once,i.asset_file_present])});}
+async function loadPlaylist(){
+  if(refreshing)return;refreshing=true;
+  try{
+    const r=await fetch('/api/player/playlist',{cache:'no-store',signal:AbortSignal.timeout(5000)});
+    if(!r.ok)throw Error(`Playlist HTTP ${r.status}`);
+    const d=await r.json();
+    if(!Array.isArray(d.items)||!['playing','stopped'].includes(d.state))throw Error('Invalid playlist response');
+    const s=signature(d);report('playlist_ok');
+    if(s!==playlistSignature){playlistSignature=s;items=d.state==='playing'?d.items.filter(i=>i.enabled):[];index=0;playCurrent();}
+  }catch(error){
+    console.warn('Playlist refresh failed; retaining last valid playlist',error);
+    report('playlist_error',error.message);
+    // Keep the current DOM, timers and last known playlist running.
+    if(!playlistSignature&&!items.length)splash(true);
+  }finally{refreshing=false;}
+}
+function objectFit(m){return m==='fill'?'cover':m==='stretch'?'fill':'contain';}
+function clearWebsiteReload(){clearInterval(reloadTimer);reloadTimer=null;}
+function closeDirectWindow(){if(directWindow){try{if(!directWindow.closed)directWindow.close();}catch(_){}directWindow=null;try{window.focus();}catch(_){}}}
+function applyEmbedZoom(f,z){const n=Math.min(200,Math.max(50,Number(z||100)))/100;f.style.transformOrigin='top left';f.style.transform=`scale(${n})`;f.style.width=`${100/n}vw`;f.style.height=`${100/n}vh`;}
+function cleanupCurrentVideo(){
+  clearInterval(videoMonitor);clearTimeout(videoStartupTimer);clearTimeout(videoHardTimer);
+  videoMonitor=videoStartupTimer=videoHardTimer=null;
+  const v=currentVideo;currentVideo=null;
+  if(v){try{v.pause();v.removeAttribute('src');v.load();v.remove();}catch(_){}}
+}
+function failCurrent(reason,token=generation){
+  if(token!==generation)return;
+  console.error('Skipping asset',currentItem?.asset_id,reason);report('error',reason);
+  cleanupCurrentVideo();if(stopPdf)stopPdf();stopPdf=null;
+  stage.replaceChildren();advanceSoon();
+}
+function playVideo(item,durationMs,token){
+  if(item.asset_file_present===false||!item.media_url){failCurrent('Video file missing',token);return;}
+  stage.replaceChildren();const video=document.createElement('video');currentVideo=video;
+  video.id='player-video';video.autoplay=true;video.playsInline=true;video.preload='auto';
+  video.muted=!!item.asset_video_muted;video.loop=!!item.asset_video_loop;video.style.objectFit=objectFit(item.asset_display_mode);
+  let lastTime=0,lastProgress=Date.now(),recoveryAttempted=false,started=false;
+  const alive=()=>token===generation&&currentVideo===video;
+  const progress=()=>{
+    if(!alive())return;const now=Number(video.currentTime||0);
+    if(Math.abs(now-lastTime)>0.05){lastTime=now;lastProgress=Date.now();recoveryAttempted=false;
+      if(Date.now()-lastProgressReport>10000){lastProgressReport=Date.now();report('progress');}}
+  };
+  videoStartupTimer=setTimeout(()=>{if(alive())failCurrent('Video did not start within 30 seconds',token);},30000);
+  video.addEventListener('loadedmetadata',()=>{
+    if(alive()&&Number.isFinite(video.duration)&&video.duration>0&&!video.loop)
+      videoHardTimer=setTimeout(()=>{if(alive())failCurrent('Video exceeded its playback safety limit',token);},Math.ceil(video.duration*1000)+60000);
+  },{once:true});
+  video.addEventListener('playing',()=>{
+    if(!alive())return;lastProgress=Date.now();clearTimeout(videoStartupTimer);videoStartupTimer=null;
+    if(!started){started=true;report('ready');if(video.loop)timer=setTimeout(advance,durationMs);}
+  });
+  video.addEventListener('timeupdate',progress);
+  video.addEventListener('error',()=>{if(alive())failCurrent(`Video media error ${video.error?.code||0}`,token);},{once:true});
+  if(!video.loop)video.addEventListener('ended',()=>{if(alive())advance();},{once:true});
+  stage.appendChild(video);video.src=item.media_url;video.load();
+  const start=()=>{if(alive())video.play().catch(error=>{if(alive())failCurrent(error.message||'Video autoplay failed',token);});};
+  if(video.readyState>=2)start();else video.addEventListener('canplay',start,{once:true});
+  videoMonitor=setInterval(()=>{
+    if(!alive()||!started||video.ended)return;progress();if(Date.now()-lastProgress<15000)return;
+    if(!recoveryAttempted){recoveryAttempted=true;lastProgress=Date.now();video.play().catch(()=>{});return;}
+    failCurrent('Video stalled after a recovery attempt',token);
+  },5000);
+}
+function playCurrent(){
+  generation++;const token=generation;
+  clearTimeout(timer);timer=null;if(stopPdf)stopPdf();stopPdf=null;
+  cleanupCurrentVideo();clearWebsiteReload();closeDirectWindow();
+  if(Date.now()<bootSplashUntil){splash(false);timer=setTimeout(playCurrent,Math.max(100,bootSplashUntil-Date.now()));return;}
+  if(!items.length){currentItem=null;report('idle');splash(true);return;}
+  const item=items[index%items.length];currentItem=item;report('selected');
+  const durationMs=Math.max(1,Number(item.duration_seconds)||15)*1000,reloadSeconds=Math.max(0,Number(item.asset_reload_seconds)||0);
+  if(item.asset_type==='image'){
+    if(item.asset_file_present===false){failCurrent('Image file missing',token);return;}
+    stage.replaceChildren();const img=document.createElement('img');img.id='player-image';img.alt=item.asset_name;img.style.objectFit=objectFit(item.asset_display_mode);
+    timer=setTimeout(()=>failCurrent('Image loading timed out',token),30000);
+    img.addEventListener('load',()=>{if(token!==generation)return;clearTimeout(timer);report('ready');timer=setTimeout(advance,durationMs);},{once:true});
+    img.addEventListener('error',()=>failCurrent('Image failed to load',token),{once:true});stage.appendChild(img);img.src=item.media_url;return;
+  }
+  if(item.asset_type==='pdf'){
+    if(item.asset_file_present===false){failCurrent('PDF file missing',token);return;}
     stage.replaceChildren();
-    stopPdf=startPdfPlayback(item,stage,()=>{timer=setTimeout(advance,durationMs);},error=>{
-      console.error("Pi Player PDF failed",item.asset_id,error);
-      if(stopPdf)stopPdf();
-      stage.innerHTML='<div class="player-message">PDF could not be displayed</div>';
-      advanceSoon();
-    });return;
-  }if(item.asset_type==="video"){playVideo(item,durationMs);return;}if(item.asset_type==="website"){if(item.asset_display_mode==="direct"){directWindow=window.open(item.asset_url,"pi-player-direct");if(!directWindow){advanceSoon();return;}try{directWindow.focus();}catch(_){}if(reloadSeconds>0)reloadTimer=setInterval(()=>{try{if(directWindow&&!directWindow.closed)directWindow.location.href=item.asset_url;}catch(_){}},reloadSeconds*1000);timer=setTimeout(()=>{clearWebsiteReload();closeDirectWindow();advance();},durationMs);return;}stage.innerHTML=`<iframe id="player-web" src="${item.asset_url}" title="${escapeHtml(item.asset_name)}"></iframe>`;const frame=document.querySelector("#player-web");applyEmbedZoom(frame,item.asset_zoom_percent);if(reloadSeconds>0)reloadTimer=setInterval(()=>{const f=document.querySelector("#player-web");if(f)f.src=item.asset_url;},reloadSeconds*1000);timer=setTimeout(advance,durationMs);return;}console.error("Pi Player unsupported item type",item.asset_type);advanceSoon();}
-function advance(){if(timer)clearTimeout(timer);timer=null;cleanupCurrentVideo();index=(index+1)%items.length;playCurrent();}function advanceSoon(){if(timer)clearTimeout(timer);clearWebsiteReload();timer=setTimeout(advance,2000);}window.addEventListener("beforeunload",()=>{if(stopPdf)stopPdf();cleanupCurrentVideo();clearWebsiteReload();closeDirectWindow();});loadPlayerInfo().finally(()=>{splash(false);loadPlaylist();});setInterval(loadPlaylist,5000);
+    stopPdf=startPdfPlayback(item,stage,()=>{if(token!==generation)return;report('ready',null,1);if(!item.asset_pdf_play_once)timer=setTimeout(advance,durationMs);},error=>failCurrent(error.message||'PDF rendering failed',token),()=>{if(token===generation)advance();},page=>{if(token===generation)report('progress',null,page);});return;
+  }
+  if(item.asset_type==='video'){playVideo(item,durationMs,token);return;}
+  if(item.asset_type==='website'){
+    if(item.asset_display_mode==='direct'){
+      directWindow=window.open(item.asset_url,'pi-player-direct');if(!directWindow){failCurrent('Direct website could not open',token);return;}
+      try{directWindow.focus();}catch(_){}report('ready');
+      if(reloadSeconds>0)reloadTimer=setInterval(()=>{try{if(directWindow&&!directWindow.closed)directWindow.location.href=item.asset_url;}catch(_){}},reloadSeconds*1000);
+    }else{
+      stage.replaceChildren();const frame=document.createElement('iframe');frame.id='player-web';frame.title=item.asset_name;applyEmbedZoom(frame,item.asset_zoom_percent);
+      frame.addEventListener('load',()=>{if(token===generation)report('ready');},{once:true});stage.appendChild(frame);frame.src=item.asset_url;
+      if(reloadSeconds>0)reloadTimer=setInterval(()=>{if(token===generation)frame.src=item.asset_url;},reloadSeconds*1000);
+    }
+    timer=setTimeout(advance,durationMs);return;
+  }
+  failCurrent(`Unsupported asset type ${item.asset_type}`,token);
+}
+function advance(){if(items.length)index=(index+1)%items.length;playCurrent();}
+function advanceSoon(){clearTimeout(timer);clearWebsiteReload();timer=setTimeout(advance,2000);}
+window.addEventListener('beforeunload',()=>{generation++;if(stopPdf)stopPdf();cleanupCurrentVideo();clearWebsiteReload();closeDirectWindow();});
+setInterval(()=>report('heartbeat'),10000);
+loadPlayerInfo().finally(()=>{splash(false);loadPlaylist();});setInterval(loadPlaylist,5000);

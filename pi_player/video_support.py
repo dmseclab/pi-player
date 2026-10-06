@@ -35,7 +35,7 @@ _remove("/media/{asset_id}","GET")
 _remove("/api/player/playlist","GET")
 
 @app.post("/api/assets/upload")
-def upload_local_asset(user:Annotated[str,Depends(require_user)],file:UploadFile=File(...),name:str|None=Form(default=None),display_mode:str=Form(default="fit"),video_muted:bool=Form(default=True),video_loop:bool=Form(default=False),pdf_page_seconds:int=Form(default=10,ge=1,le=86400))->dict[str,Any]:
+def upload_local_asset(user:Annotated[str,Depends(require_user)],file:UploadFile=File(...),name:str|None=Form(default=None),display_mode:str=Form(default="fit"),video_muted:bool=Form(default=True),video_loop:bool=Form(default=False),pdf_page_seconds:int=Form(default=10,ge=1,le=86400),pdf_play_once:bool=Form(default=False))->dict[str,Any]:
     original=Path(file.filename or "upload").name; ext=Path(original).suffix.lower(); mode=display_mode.lower()
     if mode not in IMAGE_MODES: raise HTTPException(400,"Display mode must be fit, fill or stretch")
     if ext in ALLOWED_IMAGE_EXTENSIONS: asset_type="image"
@@ -50,6 +50,7 @@ def upload_local_asset(user:Annotated[str,Depends(require_user)],file:UploadFile
         raise HTTPException(400,"Uploaded file is not an image")
     with db() as conn: max_bytes=int(get_setting(conn,"max_upload_mb","500") or "500")*1024*1024
     asset_id=str(uuid.uuid4()); tmp=TMP_DIR/f"{asset_id}.upload"; final=ASSET_DIR/f"{asset_id}{ext}"; digest=hashlib.sha256(); size=0
+    page_count=None
     try:
         with tmp.open("wb") as out:
             while chunk:=file.file.read(1024*1024):
@@ -58,6 +59,9 @@ def upload_local_asset(user:Annotated[str,Depends(require_user)],file:UploadFile
                 digest.update(chunk); out.write(chunk)
         with tmp.open("rb") as source: header=source.read(5)
         if asset_type=="pdf" and header!=b"%PDF-": raise HTTPException(400,"Invalid PDF header")
+        if asset_type=="pdf":
+            from .pdf_metadata import count_pages
+            page_count=count_pages(tmp)
         tmp.replace(final)
     finally:
         tmp.unlink(missing_ok=True)
@@ -65,7 +69,7 @@ def upload_local_asset(user:Annotated[str,Depends(require_user)],file:UploadFile
     with db() as conn:
         conn.execute("""INSERT INTO assets (id,type,name,original_filename,storage_path,url,display_mode,mime_type,size_bytes,checksum_sha256,created_at,updated_at,video_muted,video_loop) VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?,?)""",
                      (asset_id,asset_type,display,original,str(final),mode,mime,size,digest.hexdigest(),created,created,int(video_muted),int(video_loop)))
-        conn.execute("UPDATE assets SET pdf_page_seconds=? WHERE id=?",(pdf_page_seconds,asset_id))
+        conn.execute("UPDATE assets SET pdf_page_seconds=?,pdf_page_count=?,pdf_play_once=? WHERE id=?",(pdf_page_seconds,page_count,int(pdf_play_once),asset_id))
         audit(conn,user,"asset.upload","asset",asset_id,{"name":display,"type":asset_type,"bytes":size})
         add_asset_to_active_playlist(conn,asset_id,user)
         row=dict(conn.execute("SELECT * FROM assets WHERE id=?",(asset_id,)).fetchone())
@@ -98,7 +102,7 @@ def player_playlist_video()->dict[str,Any]:
     with db() as conn:
         playlist=active_playlist(conn); playback=row_to_dict(conn.execute("SELECT * FROM playback_state WHERE id=1").fetchone())
         if not playlist:return {"state":playback["state"],"playlist":None,"items":[]}
-        rows=conn.execute("""SELECT playlist_items.*,assets.type asset_type,assets.name asset_name,assets.url asset_url,assets.display_mode asset_display_mode,assets.zoom_percent asset_zoom_percent,assets.reload_seconds asset_reload_seconds,assets.mime_type asset_mime_type,assets.storage_path asset_storage_path,assets.size_bytes asset_size_bytes,assets.video_muted asset_video_muted,assets.video_loop asset_video_loop,assets.pdf_page_seconds asset_pdf_page_seconds FROM playlist_items JOIN assets ON assets.id=playlist_items.asset_id WHERE playlist_items.playlist_id=? AND assets.deleted_at IS NULL ORDER BY playlist_items.position,playlist_items.created_at""",(playlist["id"],)).fetchall()
+        rows=conn.execute("""SELECT playlist_items.*,assets.type asset_type,assets.name asset_name,assets.url asset_url,assets.display_mode asset_display_mode,assets.zoom_percent asset_zoom_percent,assets.reload_seconds asset_reload_seconds,assets.mime_type asset_mime_type,assets.storage_path asset_storage_path,assets.size_bytes asset_size_bytes,assets.video_muted asset_video_muted,assets.video_loop asset_video_loop,assets.pdf_page_seconds asset_pdf_page_seconds,assets.pdf_page_count asset_pdf_page_count,assets.pdf_play_once asset_pdf_play_once FROM playlist_items JOIN assets ON assets.id=playlist_items.asset_id WHERE playlist_items.playlist_id=? AND assets.deleted_at IS NULL ORDER BY playlist_items.position,playlist_items.created_at""",(playlist["id"],)).fetchall()
         items=rows_to_dicts(rows)
         for item in items:
             item["enabled"]=bool(item["enabled"]); local=item["asset_type"] in {"image","video","pdf"}; item["media_url"]=f"/media/{item['asset_id']}" if local else None

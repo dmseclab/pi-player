@@ -2,7 +2,7 @@
 
 A lightweight, locally managed Raspberry Pi digital-signage player built to replace an unreliable piSignage deployment.
 
-**Current development line: main — 0.3.0-rc9**
+**Current development line: main — 0.3.0-rc10**
 
 ## Validated baseline
 
@@ -249,3 +249,39 @@ New uploads (images, video and PDFs) and website links automatically append to t
 active playlist with Enabled unchecked and a default slot of 15 seconds. Enable
 them and adjust timing when ready. Without an active playlist, assets stay in the
 asset library for manual assignment. Disabled additions do not restart playback.
+
+### RC10 playback and updates
+
+Playlist refresh failures retain the last valid playlist. Videos which fail to
+start within 30 seconds are skipped. Each asynchronous media callback is scoped
+to its current playlist visit so late events cannot advance a newer slide.
+
+PDF uploads validate their structure and record their page count. Existing PDFs
+receive page counts when the asset library is opened. Enable **Play all pages
+once** to show every page for its configured seconds per page before advancing;
+otherwise the existing playlist slot controls duration. A single-page PDF is
+rendered once per visit. Playlist exports preserve this choice.
+
+The dashboard shows kiosk heartbeat age, current asset/page, last transition and
+recent playback errors. Telemetry is accepted only from loopback and retained in
+memory (last 20 errors), so it resets on API restart. Remote browser previews do
+not count as the physical kiosk. The watchdog can recover a stale kiosk heartbeat
+after 90 seconds, with a two-minute grace period after API startup. Static slide
+length does not trigger recovery while the heartbeat continues.
+
+To update an existing appliance, fetch and fast-forward the source checkout on
+`main`, then run `sudo -E bash /opt/pi-player-src/deploy/update.sh`. Dependency
+downloads happen before downtime and respect inherited proxy/pip configuration.
+The updater snapshots application/virtual environment and all persistent data,
+updates code without reprovisioning accounts or system configuration, verifies
+API health/version and refreshes the graphical kiosk session. Failures restore
+the snapshot. It prints the exact rollback command. Backups are root-only and
+are retained until explicitly removed. Rollback restores data to snapshot time,
+so uploads and changes made after that snapshot are also rolled back.
+
+Admin controls are rendered directly; no MutationObservers enhance table rows.
+
+Validation commands: `python -m unittest discover -s tests`,
+`node tests/test_player.cjs`, `node tests/test_pdf_player.cjs`. For the complete
+admin DOM regression test, install jsdom in an external test directory and run
+`NODE_PATH=/path/to/node_modules node tests/test_admin_observers.cjs`.

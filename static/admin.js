@@ -72,11 +72,12 @@ function setTab(name) {
 
 async function loadAll() {
   showApp();
-  await Promise.all([loadStatus(), loadAssets(), loadPlaylists(), loadSettings(), loadLogs()]);
+  await loadAssets();
+  await Promise.all([loadStatus(), loadPlaylists(), loadSettings(), loadLogs()]);
 }
 
 async function loadStatus() {
-  const status = await api("/api/status");
+  const [status, runtime] = await Promise.all([api("/api/status"),api("/api/playback/status")]);
   $("#player-name").textContent = status.player_name;
   const isPlaying = status.playback.state === "playing";
   $("#start-playback").disabled = isPlaying;
@@ -86,10 +87,15 @@ async function loadStatus() {
     <div><strong>Playback</strong><br><span class="muted">${escapeHtml(status.playback.state)}</span></div>
     <div><strong>Active playlist</strong><br><span class="muted">${escapeHtml(status.active_playlist?.name || "None")}</span></div>
     <div><strong>Host</strong><br><span class="muted">${escapeHtml(status.host)}</span></div>
-    <div><strong>IP addresses</strong><br><span class="muted">${escapeHtml(status.ip_addresses.join(", ") || "Unknown")}</span></div>
+    <div><strong>IP addresses</strong><br><span class="muted">${escapeHtml((window.location.hostname.match(/^(localhost|127\.)/) ? status.ip_addresses.join(", ") : window.location.hostname) || "Unknown")}</span></div>
     <div><strong>Assets</strong><br><span class="muted">${status.asset_count}</span></div>
     <div><strong>Disk</strong><br><span class="muted">${bytes(status.disk.free)} free, ${diskUsed}% used</span></div>
     <div><strong>SSH</strong><br><span class="muted">Port ${status.ssh_port}</span></div>
+    <div><strong>Current slide</strong><br><span class="muted">${escapeHtml(runtime.asset_name||"None")} ${runtime.page?`— page ${runtime.page}`:""}</span></div>
+    <div><strong>Player heartbeat</strong><br><span class="muted">${runtime.stalled?"Stalled":runtime.heartbeat_age_seconds==null?"Waiting":`${runtime.heartbeat_age_seconds}s ago`} · ${escapeHtml(runtime.phase||"")}</span></div>
+    <div><strong>Last successful transition</strong><br><span class="muted">${escapeHtml(runtime.last_transition||"None yet")}</span></div>
+    <div><strong>Playlist refresh</strong><br><span class="muted">${escapeHtml(runtime.playlist_error||"OK")}</span></div>
+    <div><strong>Recent playback errors</strong><br><span class="muted">${(runtime.errors||[]).slice(0,5).map(e=>`${escapeHtml(e.at)} — ${escapeHtml(e.asset_name||"")}: ${escapeHtml(e.message)}`).join("<br>")||"None"}</span></div>
     <div><strong>Version</strong><br><span class="muted">${escapeHtml(status.version)}</span></div>
   `;
 }
@@ -113,10 +119,10 @@ async function loadAssets() {
       <tbody>
         ${state.assets.map((asset) => state.editingAssetId === asset.id ? renderAssetEditRow(asset) : `
           <tr>
-            <td>${asset.type === "image" ? `<img class="asset-preview" src="${asset.media_url}" alt="">` : `<span class="pill">${asset.type === "pdf" ? "PDF" : "Web"}</span>`}</td>
+            <td>${assetPreview(asset)}</td>
             <td>${escapeHtml(asset.name)}</td>
             <td>${escapeHtml(asset.type)}</td>
-            <td class="muted">${asset.type === "website" ? `${escapeHtml(asset.url)}<br><span class="pill">${escapeHtml(asset.display_mode || "embed")}</span>` : escapeHtml(bytes(asset.size_bytes)) + (asset.type === "pdf" ? `<br>${asset.pdf_page_seconds} seconds/page` : "")}</td>
+            <td class="muted">${assetDetails(asset)}</td>
             <td>
               <button data-edit-asset="${asset.id}">Edit</button>
               <button class="danger" data-delete-asset="${asset.id}">Delete</button>
@@ -131,19 +137,13 @@ async function loadAssets() {
 function renderAssetEditRow(asset) {
   return `
     <tr data-editing-asset="${asset.id}">
-      <td>${asset.type === "image" ? `<img class="asset-preview" src="${asset.media_url}" alt="">` : `<span class="pill">${asset.type === "pdf" ? "PDF" : "Web"}</span>`}</td>
+      <td>${assetPreview(asset)}</td>
       <td>
         <input data-asset-edit-name value="${escapeAttr(asset.name)}" aria-label="Asset name">
       </td>
       <td>${escapeHtml(asset.type)}</td>
       <td>
-        ${asset.type === "website"
-          ? `<div class="form-row"><input data-asset-edit-url value="${escapeAttr(asset.url || "")}" aria-label="Website URL"></div>
-             <select data-asset-edit-display-mode aria-label="Website display mode">
-               <option value="embed" ${(asset.display_mode || "embed") === "embed" ? "selected" : ""}>Embed</option>
-               <option value="direct" ${asset.display_mode === "direct" ? "selected" : ""}>Direct</option>
-             </select>`
-          : asset.type === "pdf" ? `<label>Seconds per page <input data-asset-edit-pdf-seconds type="number" min="1" max="86400" value="${asset.pdf_page_seconds || 10}"></label>` : `<span class="muted">${escapeHtml(bytes(asset.size_bytes))}</span>`}
+        ${assetEditControls(asset)}
       </td>
       <td>
         <button class="primary" data-save-asset="${asset.id}">Save</button>
@@ -164,6 +164,7 @@ async function loadPlaylists() {
       <div class="toolbar">
         <h3>${escapeHtml(playlist.name)} ${playlist.is_active ? `<span class="pill">Active</span>` : ""}</h3>
         <button data-activate-playlist="${playlist.id}">Activate</button>
+        <button data-export-playlist="${playlist.id}">Export</button>
         <button class="danger" data-delete-playlist="${playlist.id}">Delete</button>
       </div>
       <form class="toolbar" data-add-item="${playlist.id}">
@@ -171,7 +172,7 @@ async function loadPlaylists() {
           <option value="">Select asset</option>
           ${state.assets.map((asset) => `<option value="${asset.id}">${escapeHtml(asset.name)} (${asset.type})</option>`).join("")}
         </select>
-        <input name="duration_seconds" type="number" min="1" value="15" aria-label="Duration seconds">
+        <label class="playlist-timer-field"><span data-timer-label>Display time (seconds)</span><input name="duration_seconds" type="number" min="1" max="86400" value="15"></label>
         <button class="primary" type="submit">Add Item</button>
       </form>
       ${renderPlaylistItems(playlist)}
@@ -183,13 +184,13 @@ function renderPlaylistItems(playlist) {
   if (!playlist.items.length) return `<p class="muted">No playlist items yet.</p>`;
   return `
     <table class="table">
-      <thead><tr><th>Pos</th><th>Asset</th><th>Duration</th><th>Enabled</th><th></th></tr></thead>
+      <thead><tr><th>Pos</th><th>Asset</th><th>Display time</th><th>Enabled</th><th></th></tr></thead>
       <tbody>
         ${playlist.items.map((item) => `
           <tr>
             <td><input data-item-position="${playlist.id}:${item.id}" type="number" min="0" value="${item.position}"></td>
             <td>${escapeHtml(item.asset_name)}</td>
-            <td><input data-item-duration="${playlist.id}:${item.id}" type="number" min="1" value="${item.duration_seconds}"></td>
+            <td>${automaticTiming(state.assets.find(a=>a.id===item.asset_id))?`<span class="pill">${timingDescription(state.assets.find(a=>a.id===item.asset_id))}</span>`:`<input data-item-duration="${playlist.id}:${item.id}" type="number" min="1" max="86400" value="${item.duration_seconds}">`}</td>
             <td><input data-item-enabled="${playlist.id}:${item.id}" type="checkbox" ${item.enabled ? "checked" : ""}></td>
             <td><button class="danger" data-delete-item="${playlist.id}:${item.id}">Remove</button></td>
           </tr>
@@ -215,7 +216,11 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
 
-  if (button.dataset.tab) setTab(button.dataset.tab);
+  if(button.dataset.exportPlaylist)window.location.href=`/api/playlists/${button.dataset.exportPlaylist}/export`;
+  if(button.id==='import-playlist')$('#playlist-package-file').click();
+  if(button.id==='test-link')window.open($('#link-url').value,'_blank','noopener');
+  if(button.dataset.testLink)window.open(button.dataset.testLink,'_blank','noopener');
+  if (button.dataset.tab) { setTab(button.dataset.tab);if(button.dataset.tab==='dashboard')await loadStatus(); }
   if (button.id === "refresh-status") await loadStatus();
   if (button.id === "refresh-assets") await loadAssets();
   if (button.id === "refresh-logs") await loadLogs();
@@ -251,18 +256,32 @@ document.addEventListener("click", async (event) => {
     const row = button.closest("[data-editing-asset]");
     if (!asset || !row) return;
     const payload = { name: row.querySelector("[data-asset-edit-name]").value.trim() };
+    let endpoint=`/api/assets/${asset.id}`;
     if (asset.type === "website") {
-      payload.url = row.querySelector("[data-asset-edit-url]").value.trim();
-      payload.display_mode = row.querySelector("[data-asset-edit-display-mode]").value;
+      payload.url=row.querySelector('[data-asset-edit-url]').value.trim();
+      payload.display_mode=row.querySelector('[data-asset-edit-display-mode]').value;
+      payload.zoom_percent=Number(row.querySelector('[data-asset-edit-zoom]').value);
+      payload.reload_seconds=Number(row.querySelector('[data-asset-edit-reload]').value);
+      endpoint+='/website-settings';
+    } else if(asset.type==='video') {
+      payload.display_mode=row.querySelector('[data-asset-edit-display-mode]').value;
+      payload.muted=row.querySelector('[data-video-muted]').checked;
+      payload.loop=row.querySelector('[data-video-loop]').checked;
+      endpoint+='/video-settings';
+    } else if(asset.type==='image') {
+      payload.display_mode=row.querySelector('[data-asset-edit-display-mode]').value;
+      endpoint+='/image-settings';
+    } else if(asset.type==='pdf') {
+      payload.pdf_page_seconds=Number(row.querySelector('[data-asset-edit-pdf-seconds]').value);
+      payload.pdf_play_once=row.querySelector('[data-asset-edit-pdf-once]').checked;
     }
-    if (asset.type === "pdf") payload.pdf_page_seconds = Number(row.querySelector("[data-asset-edit-pdf-seconds]").value);
-    await api(`/api/assets/${asset.id}`, { method: "PUT", body: JSON.stringify(payload) });
+    await api(endpoint,{method:'PUT',body:JSON.stringify(payload)});
     state.editingAssetId = null;
-    await Promise.all([loadAssets(), loadPlaylists(), loadStatus()]);
+    await refreshAssetsAndPlaylists();
   }
   if (button.dataset.deleteAsset && confirm("Delete this asset?")) {
     await api(`/api/assets/${button.dataset.deleteAsset}`, { method: "DELETE" });
-    await Promise.all([loadAssets(), loadPlaylists(), loadStatus()]);
+    await refreshAssetsAndPlaylists();
   }
   if (button.dataset.activatePlaylist) {
     await api(`/api/playlists/${button.dataset.activatePlaylist}/activate`, { method: "POST" });
@@ -281,6 +300,11 @@ document.addEventListener("click", async (event) => {
 
 document.addEventListener("change", async (event) => {
   const target = event.target;
+  if(target.name==='asset_id'&&target.closest('[data-add-item]')){syncAddItemTiming(target.closest('form'));return;}
+  if(target.id==='playlist-package-file'&&target.files?.[0]){
+    const data=new FormData();data.append('file',target.files[0]);
+    await api('/api/playlists/import',{method:'POST',body:data});target.value='';await refreshAssetsAndPlaylists();return;
+  }
   const key = target.dataset.itemDuration || target.dataset.itemPosition || target.dataset.itemEnabled;
   if (!key) return;
   const [playlistId, itemId] = key.split(":");
@@ -310,17 +334,18 @@ $("#upload-form").addEventListener("submit", async (event) => {
   const formData = new FormData(event.target);
   await api("/api/assets/upload", { method: "POST", body: formData });
   event.target.reset();
-  await Promise.all([loadAssets(), loadPlaylists(), loadStatus()]);
+  await refreshAssetsAndPlaylists();
 });
 
 $("#link-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await api("/api/assets/link", {
+  const created=await api("/api/assets/link", {
     method: "POST",
-    body: JSON.stringify({ name: $("#link-name").value, url: $("#link-url").value, display_mode: "embed" }),
+    body: JSON.stringify({ name: $("#link-name").value, url: $("#link-url").value, display_mode: $("#link-display-mode").value }),
   });
+  await api(`/api/assets/${created.id}/website-settings`,{method:'PUT',body:JSON.stringify({name:created.name,url:created.url,display_mode:created.display_mode,zoom_percent:Number($('#link-zoom-percent').value),reload_seconds:Number($('#link-reload-seconds').value)})});
   event.target.reset();
-  await Promise.all([loadAssets(), loadPlaylists(), loadStatus()]);
+  await refreshAssetsAndPlaylists();
 });
 
 $("#playlist-form").addEventListener("submit", async (event) => {
@@ -339,7 +364,7 @@ $("#playlist-list").addEventListener("submit", async (event) => {
     method: "POST",
     body: JSON.stringify({
       asset_id: formData.get("asset_id"),
-      duration_seconds: Number(formData.get("duration_seconds")),
+      duration_seconds: Number(formData.get("duration_seconds")||15),
       enabled: true,
     }),
   });
@@ -371,4 +396,6 @@ $("#password-form").addEventListener("submit", async (event) => {
   alert("Login updated. Use the new credentials next time.");
 });
 
+initializeAdminControls();
+setInterval(()=>{if(!$("#app").classList.contains("hidden")&&!$("#tab-dashboard").classList.contains("hidden"))loadStatus().catch(console.warn);},10000);
 api("/api/session").then(loadAll).catch(() => showLogin());

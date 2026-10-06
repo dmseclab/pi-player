@@ -51,8 +51,8 @@ uploadForm?.addEventListener("submit", (event) => {
 
   const data = new FormData(uploadForm);
   if (isVideoUpload(file)) {
-    data.set("video_muted", String(!!uploadForm.querySelector("[data-upload-video-muted]")?.checked));
-    data.set("video_loop", String(!!uploadForm.querySelector("[data-upload-video-loop]")?.checked));
+    data.set("video_muted", String(!!uploadForm.querySelector('[name="video_muted"]')?.checked));
+    data.set("video_loop", String(!!uploadForm.querySelector('[name="video_loop"]')?.checked));
   }
 
   const box = ensureUploadProgress();

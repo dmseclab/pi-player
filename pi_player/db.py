@@ -143,6 +143,9 @@ def init_db() -> None:
         set_default(conn, "max_upload_mb", str(DEFAULT_MAX_UPLOAD_MB))
         ensure_column(conn, "assets", "display_mode", "TEXT NOT NULL DEFAULT 'embed'")
         ensure_column(conn, "assets", "pdf_page_seconds", "INTEGER NOT NULL DEFAULT 10")
+        ensure_column(conn, "assets", "pdf_page_count", "INTEGER")
+        ensure_column(conn, "assets", "pdf_play_once", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "assets", "pdf_metadata_error", "TEXT")
         ensure_column(conn, "assets", "video_muted", "INTEGER NOT NULL DEFAULT 1")
         ensure_column(conn, "assets", "video_loop", "INTEGER NOT NULL DEFAULT 0")
         conn.execute(

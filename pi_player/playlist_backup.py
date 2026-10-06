@@ -102,6 +102,7 @@ def export_playlist(
                 asset: dict[str, Any] = {
                     "type": record["type"],
                     "pdf_page_seconds": record.get("pdf_page_seconds", 10),
+                    "pdf_play_once": bool(record.get("pdf_play_once", 0)),
                     "video_muted": bool(record.get("video_muted", 1)),
                     "video_loop": bool(record.get("video_loop", 0)),
                     "name": record["name"],
@@ -298,7 +299,9 @@ def import_playlist(
                             seconds = int(asset.get("pdf_page_seconds", 10))
                             if not 1 <= seconds <= 86400:
                                 raise HTTPException(status_code=400, detail="Invalid PDF page timer")
-                            conn.execute("UPDATE assets SET pdf_page_seconds = ? WHERE id = ?", (seconds, asset_id))
+                            from .pdf_metadata import count_pages
+                            count=count_pages(destination)
+                            conn.execute("UPDATE assets SET pdf_page_seconds=?,pdf_page_count=?,pdf_play_once=? WHERE id=?", (seconds,count,int(bool(asset.get("pdf_play_once",False))),asset_id))
                     elif asset_type == "website":
                         url = str(asset.get("url") or "").strip()
                         if not url.startswith(("http://", "https://")):

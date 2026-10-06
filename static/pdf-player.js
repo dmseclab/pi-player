@@ -1,6 +1,6 @@
 // Local, pinned PDF.js: playback never depends on an Internet connection.
 let pdfLibrary;
-function startPdfPlayback(item, stage, onReady, onError) {
+function startPdfPlayback(item, stage, onReady, onError, onComplete = () => {}, onPage = () => {}) {
   let stopped = false;
   let loadingTask;
   let renderTask;
@@ -14,7 +14,7 @@ function startPdfPlayback(item, stage, onReady, onError) {
   }
   async function run() {
     try {
-      pdfLibrary ||= import("/static/vendor/pdfjs/legacy/build/pdf.mjs");
+      pdfLibrary ||= import("/static/vendor/pdfjs/legacy/build/pdf.mjs").catch(error => { pdfLibrary = null; throw error; });
       const pdfjs = await pdfLibrary;
       if (!alive()) return;
       pdfjs.GlobalWorkerOptions.workerSrc = "/static/vendor/pdfjs/legacy/build/pdf.worker.mjs";
@@ -29,7 +29,10 @@ function startPdfPlayback(item, stage, onReady, onError) {
       const pdf = await loadingTask.promise;
       if (!alive()) return;
       let pageNumber = 1;
+      let ready = false;
+      function onReadyOnce() { if (!ready) { ready = true; onReady(); } }
       async function renderPage() {
+        if (!watchdog) watchdog = setTimeout(() => fail(new Error("PDF page rendering timed out")), 30000);
         try {
           const page = await pdf.getPage(pageNumber);
           if (!alive()) return;
@@ -50,12 +53,16 @@ function startPdfPlayback(item, stage, onReady, onError) {
           if (!alive()) return;
           stage.replaceChildren(canvas);
           page.cleanup();
-          if (pageNumber === 1 && watchdog) {
-            clearTimeout(watchdog); watchdog = null;
-            onReady();
+          clearTimeout(watchdog); watchdog = null;
+          if (pageNumber === 1) onReadyOnce();
+          onPage(pageNumber);
+          const delay = Math.max(1, Number(item.asset_pdf_page_seconds || 10)) * 1000;
+          if (item.asset_pdf_play_once && pageNumber === pdf.numPages) {
+            pageTimer = setTimeout(() => { if (alive()) onComplete(); }, delay);
+          } else if (pdf.numPages > 1) {
+            pageNumber = pageNumber % pdf.numPages + 1;
+            pageTimer = setTimeout(renderPage, delay);
           }
-          pageNumber = pageNumber % pdf.numPages + 1;
-          pageTimer = setTimeout(renderPage, Math.max(1, Number(item.asset_pdf_page_seconds || 10)) * 1000);
         } catch (error) { fail(error); }
       }
       await renderPage();

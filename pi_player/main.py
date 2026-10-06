@@ -33,7 +33,7 @@ except Exception: logger.exception("Startup asset integrity check failed")
 app=FastAPI(title="Pi Player RK",version=__version__); app.mount("/static",StaticFiles(directory=BASE_DIR/"static"),name="static")
 class LoginRequest(BaseModel): username:str; password:str
 class LinkAssetRequest(BaseModel): name:str=Field(min_length=1,max_length=120); url:str=Field(min_length=4,max_length=2048); display_mode:str="embed"
-class AssetUpdateRequest(BaseModel): name:str=Field(min_length=1,max_length=120); url:str|None=Field(default=None,min_length=4,max_length=2048); display_mode:str|None=None; pdf_page_seconds:int|None=Field(default=None,ge=1,le=86400)
+class AssetUpdateRequest(BaseModel): name:str=Field(min_length=1,max_length=120); url:str|None=Field(default=None,min_length=4,max_length=2048); display_mode:str|None=None; pdf_page_seconds:int|None=Field(default=None,ge=1,le=86400); pdf_play_once:bool|None=None
 class PlaylistRequest(BaseModel): name:str=Field(min_length=1,max_length=120)
 class PlaylistItemRequest(BaseModel): asset_id:str; duration_seconds:int=Field(default=15,ge=1,le=86400); enabled:bool=True
 class PlaylistItemUpdateRequest(BaseModel): position:int|None=Field(default=None,ge=0); duration_seconds:int|None=Field(default=None,ge=1,le=86400); enabled:bool|None=None
@@ -43,7 +43,7 @@ def require_user(session:Annotated[str|None,Cookie(alias=SESSION_COOKIE)]=None)-
     username=read_session(session)
     if not username: raise HTTPException(status_code=401,detail="Login required")
     return username
-def static_html(name:str)->HTMLResponse:return HTMLResponse((BASE_DIR/"static"/name).read_text(encoding="utf-8"))
+def static_html(name:str)->HTMLResponse:return HTMLResponse((BASE_DIR/"static"/name).read_text(encoding="utf-8"),headers={"Cache-Control":"no-store"})
 @app.get("/",response_class=HTMLResponse)
 def index()->HTMLResponse:return static_html("admin.html")
 @app.get("/player",response_model=None)
@@ -223,6 +223,9 @@ def _ensure_playlist_item(conn,playlist_id,item_id):
     if not row:raise HTTPException(status_code=404,detail="Playlist item not found")
     return row
 def _asset_response(row):
+    if row["type"] == "pdf" and row.get("pdf_page_count") is None and not row.get("pdf_metadata_error"):
+        from .pdf_metadata import populate_metadata
+        row = populate_metadata(row)
     row["media_url"]=f"/media/{row['id']}" if row["type"] in {"image","video","pdf"} else None
     if row["type"] in {"image","video","pdf"}:
         path=Path(row["storage_path"]).resolve() if row.get("storage_path") else None;row["file_present"]=bool(path and path.is_file() and ASSET_DIR.resolve() in path.parents)

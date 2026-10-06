@@ -11,6 +11,14 @@ os.environ['PI_PLAYER_DATA_DIR'] = _runtime.name
 from fastapi.testclient import TestClient
 from pi_player.application import app
 from pi_player.db import connect, init_db, db, set_setting
+from pypdf import PdfWriter
+
+def pdf_bytes(pages=1):
+    output=io.BytesIO()
+    writer=PdfWriter()
+    for _ in range(pages):writer.add_blank_page(width=300,height=200)
+    writer.write(output)
+    return output.getvalue()
 
 
 class PdfTests(unittest.TestCase):
@@ -21,14 +29,15 @@ class PdfTests(unittest.TestCase):
         self.client.post('/api/login', json={'username': 'pi', 'password': 'pi'}).raise_for_status()
 
     def test_upload_playback_settings_and_package_roundtrip(self):
-        content = b'%PDF-1.7\nPDF fixture for transport tests\n%%EOF'
+        content = pdf_bytes(3)
         response = self.client.post('/api/assets/upload', files={'file': ('notice.pdf', content, 'application/pdf')}, data={'pdf_page_seconds': '7'})
         self.assertEqual(response.status_code, 200, response.text)
         asset = response.json()
         self.assertEqual(asset['type'], 'pdf')
         self.assertEqual(asset['pdf_page_seconds'], 7)
+        self.assertEqual(asset['pdf_page_count'],3)
         self.assertEqual(self.client.get(asset['media_url']).content, content)
-        response = self.client.put('/api/assets/'+asset['id'], json={'name': 'Notice', 'pdf_page_seconds': 3})
+        response = self.client.put('/api/assets/'+asset['id'], json={'name': 'Notice', 'pdf_page_seconds': 3, 'pdf_play_once':True})
         self.assertEqual(response.status_code, 200, response.text)
         playlist = self.client.post('/api/playlists', json={'name': 'PDF test'}).json()
         pid = playlist['id']
@@ -45,6 +54,8 @@ class PdfTests(unittest.TestCase):
         new_assets = self.client.get('/api/assets').json()
         copies = [a for a in new_assets if a['type'] == 'pdf' and a['id'] != asset['id']]
         self.assertEqual(copies[-1]['pdf_page_seconds'], 3)
+        self.assertTrue(copies[-1]['pdf_play_once'])
+        self.assertEqual(copies[-1]['pdf_page_count'],3)
         self.assertEqual(self.client.get(copies[-1]['media_url']).content, content)
 
     def test_video_support_survives_consolidation(self):
@@ -98,7 +109,7 @@ class PdfTests(unittest.TestCase):
     def test_new_assets_append_disabled_to_active_playlist(self):
         pid=self.client.post('/api/playlists',json={'name':'Automatic additions'}).json()['id']
         self.client.post(f'/api/playlists/{pid}/activate').raise_for_status()
-        for name,mime,body in [('image.png','image/png',b'image'),('video.mp4','video/mp4',b'video'),('pdf.pdf','application/pdf',b'%PDF-1.7')]:
+        for name,mime,body in [('image.png','image/png',b'image'),('video.mp4','video/mp4',b'video'),('pdf.pdf','application/pdf',pdf_bytes())]:
             self.client.post('/api/assets/upload',files={'file':(name,body,mime)}).raise_for_status()
         self.client.post('/api/assets/link',json={'name':'Website','url':'https://example.com'}).raise_for_status()
         playlist=next(p for p in self.client.get('/api/playlists').json() if p['id']==pid)
@@ -111,6 +122,40 @@ class PdfTests(unittest.TestCase):
         self.client.post('/api/assets/link',json={'name':'Unassigned','url':'https://example.com'}).raise_for_status()
         playlist=next(p for p in self.client.get('/api/playlists').json() if p['id']==pid)
         self.assertEqual(len(playlist['items']),4)
+
+    def test_pdf_structure_validation_and_existing_metadata(self):
+        response=self.client.post('/api/assets/upload',files={'file':('broken.pdf',b'%PDF-1.7\nnot a document','application/pdf')})
+        self.assertEqual(response.status_code,400)
+        asset=self.client.post('/api/assets/upload',files={'file':('legacy.pdf',pdf_bytes(2),'application/pdf')}).json()
+        with db() as conn:conn.execute('UPDATE assets SET pdf_page_count=NULL WHERE id=?',(asset['id'],))
+        row=next(a for a in self.client.get('/api/assets').json() if a['id']==asset['id'])
+        self.assertEqual(row['pdf_page_count'],2)
+
+    def test_kiosk_diagnostics_and_watchdog(self):
+        from unittest.mock import patch
+        from pi_player import playback_monitor as monitor
+        pid=self.client.post('/api/playlists',json={'name':'Diagnostics'}).json()['id']
+        self.client.post(f'/api/playlists/{pid}/activate').raise_for_status()
+        asset=self.client.post('/api/assets/upload',files={'file':('status.pdf',pdf_bytes(),'application/pdf')}).json()
+        item=next(p for p in self.client.get('/api/playlists').json() if p['id']==pid)['items'][0]
+        self.client.put(f"/api/playlists/{pid}/items/{item['id']}",json={'enabled':True}).raise_for_status()
+        self.client.post('/api/playback/start').raise_for_status()
+        for event in ['selected','ready','progress']:
+            self.client.post('/api/player/report',json={'event':event,'asset_id':asset['id'],'page':1}).raise_for_status()
+        self.client.post('/api/player/report',json={'event':'error','asset_id':asset['id'],'message':'Test skip'}).raise_for_status()
+        status=self.client.get('/api/playback/status').json()
+        self.assertEqual(status['asset_name'],'status')
+        self.assertEqual(status['page'],1)
+        self.assertIsNotNone(status['last_transition'])
+        self.assertEqual(status['errors'][0]['message'],'Test skip')
+        self.assertFalse(status['stalled'])
+        with patch.object(monitor,'_last_seen',monitor.monotonic()-100):
+            self.assertTrue(self.client.get('/api/player/watchdog').json()['stalled'])
+        self.client.post('/api/playback/stop').raise_for_status()
+        with patch.object(monitor,'_last_seen',monitor.monotonic()-100):
+            self.assertFalse(self.client.get('/api/player/watchdog').json()['stalled'])
+        remote=TestClient(app,client=('192.0.2.20',1234))
+        self.assertEqual(remote.post('/api/player/report',json={'event':'heartbeat'}).status_code,403)
 
     def test_validation(self):
         response = self.client.post('/api/assets/upload', files={'file': ('bad.pdf', b'not PDF', 'application/pdf')})
