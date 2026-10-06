@@ -2,7 +2,7 @@
 
 A lightweight, locally managed Raspberry Pi digital-signage player built to replace an unreliable piSignage deployment.
 
-**Current development line: main — 0.3.0-rc6**
+**Current development line: main — 0.3.0-rc7**
 
 ## Validated baseline
 
@@ -244,3 +244,8 @@ fonts, character maps and WASM helpers. Playback requires no external CDN.
 Existing appliance installations retain setup state, watchdog behavior, video audio
 and loop settings, playlist links and uploaded files. Updates should copy application
 code while preserving the virtual environment, runtime data and system configuration.
+
+New uploads (images, video and PDFs) and website links automatically append to the
+active playlist with Enabled unchecked and a default slot of 15 seconds. Enable
+them and adjust timing when ready. Without an active playlist, assets stay in the
+asset library for manual assignment. Disabled additions do not restart playback.

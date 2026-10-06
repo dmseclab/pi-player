@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .config import ALLOWED_IMAGE_EXTENSIONS, ALLOWED_VIDEO_EXTENSIONS, ALLOWED_VIDEO_MIME_TYPES, ASSET_DIR, DB_PATH, TMP_DIR
-from .db import active_playlist, audit, db, get_setting, now_iso, row_to_dict, rows_to_dicts, set_setting
+from .db import add_asset_to_active_playlist, active_playlist, audit, db, get_setting, now_iso, row_to_dict, rows_to_dicts, set_setting
 from .main import app, require_user, _ensure_asset
 
 IMAGE_MODES={"fit","fill","stretch"}
@@ -67,6 +67,7 @@ def upload_local_asset(user:Annotated[str,Depends(require_user)],file:UploadFile
                      (asset_id,asset_type,display,original,str(final),mode,mime,size,digest.hexdigest(),created,created,int(video_muted),int(video_loop)))
         conn.execute("UPDATE assets SET pdf_page_seconds=? WHERE id=?",(pdf_page_seconds,asset_id))
         audit(conn,user,"asset.upload","asset",asset_id,{"name":display,"type":asset_type,"bytes":size})
+        add_asset_to_active_playlist(conn,asset_id,user)
         row=dict(conn.execute("SELECT * FROM assets WHERE id=?",(asset_id,)).fetchone())
     row["media_url"]=f"/media/{asset_id}"; row["file_present"]=True; row["video_muted"]=bool(row["video_muted"]); row["video_loop"]=bool(row["video_loop"]); return row
 

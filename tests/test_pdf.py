@@ -63,7 +63,7 @@ class PdfTests(unittest.TestCase):
         package.raise_for_status()
         response = self.client.post('/api/playlists/import',files={'file':('video.zip',package.content,'application/zip')})
         self.assertEqual(response.status_code,200,response.text)
-        copied = [a for a in self.client.get('/api/assets').json() if a['type']=='video' and a['id']!=asset['id']][-1]
+        copied = [a for a in self.client.get('/api/assets').json() if a['type']=='video' and a['id']!=asset['id'] and a['original_filename']=='clip.mp4'][-1]
         self.assertFalse(bool(copied['video_muted']))
         self.assertTrue(bool(copied['video_loop']))
 
@@ -94,6 +94,23 @@ class PdfTests(unittest.TestCase):
                 self.assertEqual(conn.execute("SELECT value FROM settings WHERE key='setup_required'").fetchone()[0],'0')
         finally:
             module.DB_PATH=original
+
+    def test_new_assets_append_disabled_to_active_playlist(self):
+        pid=self.client.post('/api/playlists',json={'name':'Automatic additions'}).json()['id']
+        self.client.post(f'/api/playlists/{pid}/activate').raise_for_status()
+        for name,mime,body in [('image.png','image/png',b'image'),('video.mp4','video/mp4',b'video'),('pdf.pdf','application/pdf',b'%PDF-1.7')]:
+            self.client.post('/api/assets/upload',files={'file':(name,body,mime)}).raise_for_status()
+        self.client.post('/api/assets/link',json={'name':'Website','url':'https://example.com'}).raise_for_status()
+        playlist=next(p for p in self.client.get('/api/playlists').json() if p['id']==pid)
+        self.assertEqual(len(playlist['items']),4)
+        self.assertEqual([i['position'] for i in playlist['items']],[0,1,2,3])
+        self.assertTrue(all(not i['enabled'] for i in playlist['items']))
+        self.assertTrue(all(i['duration_seconds']==15 for i in playlist['items']))
+        with db() as conn:
+            conn.execute('UPDATE playlists SET is_active=0')
+        self.client.post('/api/assets/link',json={'name':'Unassigned','url':'https://example.com'}).raise_for_status()
+        playlist=next(p for p in self.client.get('/api/playlists').json() if p['id']==pid)
+        self.assertEqual(len(playlist['items']),4)
 
     def test_validation(self):
         response = self.client.post('/api/assets/upload', files={'file': ('bad.pdf', b'not PDF', 'application/pdf')})

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -197,3 +198,26 @@ def normalize_storage_path(path: str | None) -> str | None:
     if not path:
         return None
     return str(Path(path))
+
+
+def add_asset_to_active_playlist(conn: sqlite3.Connection, asset_id: str, actor: str) -> str | None:
+    """Append newly created assets for review, without starting their playback."""
+    playlist = active_playlist(conn)
+    if not playlist:
+        return None
+    position = conn.execute(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_items WHERE playlist_id = ?",
+        (playlist["id"],),
+    ).fetchone()[0]
+    item_id = str(uuid.uuid4())
+    created = now_iso()
+    conn.execute(
+        """INSERT INTO playlist_items
+           (id, playlist_id, asset_id, position, duration_seconds, enabled, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 15, 0, ?, ?)""",
+        (item_id, playlist["id"], asset_id, position, created, created),
+    )
+    conn.execute("UPDATE playlists SET updated_at = ? WHERE id = ?", (created, playlist["id"]))
+    audit(conn, actor, "playlist.item_auto_add", "playlist_item", item_id,
+          {"playlist_id": playlist["id"], "asset_id": asset_id, "enabled": False})
+    return item_id

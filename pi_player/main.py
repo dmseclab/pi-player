@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .config import ALLOWED_IMAGE_EXTENSIONS, ALLOWED_IMAGE_MIME_PREFIXES, ASSET_DIR, BASE_DIR, SESSION_COOKIE, TMP_DIR, ensure_runtime_dirs
-from .db import active_playlist, audit, db, get_setting, init_db, now_iso, row_to_dict, rows_to_dicts, set_setting
+from .db import add_asset_to_active_playlist, active_playlist, audit, db, get_setting, init_db, now_iso, row_to_dict, rows_to_dicts, set_setting
 from .health import integrity_report
 from .logging_config import configure_logging
 from .security import create_session, hash_password, read_session, verify_password
@@ -113,7 +113,7 @@ def create_link_asset(payload:LinkAssetRequest,user:Annotated[str,Depends(requir
     parsed=urlparse(payload.url)
     if parsed.scheme not in {"http","https"} or not parsed.netloc:raise HTTPException(status_code=400,detail="Website links must start with http:// or https://")
     display_mode=_clean_display_mode(payload.display_mode);asset_id=str(uuid.uuid4());created=now_iso()
-    with db() as conn:conn.execute("INSERT INTO assets (id,type,name,url,display_mode,created_at,updated_at) VALUES (?,'website',?,?,?,?,?)",(asset_id,payload.name.strip(),payload.url,display_mode,created,created));audit(conn,user,"asset.link_create","asset",asset_id,payload.model_dump());return _asset_response(dict(conn.execute("SELECT * FROM assets WHERE id=?",(asset_id,)).fetchone()))
+    with db() as conn:conn.execute("INSERT INTO assets (id,type,name,url,display_mode,created_at,updated_at) VALUES (?,'website',?,?,?,?,?)",(asset_id,payload.name.strip(),payload.url,display_mode,created,created));audit(conn,user,"asset.link_create","asset",asset_id,payload.model_dump());add_asset_to_active_playlist(conn,asset_id,user);return _asset_response(dict(conn.execute("SELECT * FROM assets WHERE id=?",(asset_id,)).fetchone()))
 @app.put("/api/assets/{asset_id}")
 def update_asset(asset_id:str,payload:AssetUpdateRequest,user:Annotated[str,Depends(require_user)])->dict[str,Any]:
     with db() as conn:
