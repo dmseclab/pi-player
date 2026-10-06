@@ -2,7 +2,7 @@
 
 A lightweight, locally managed Raspberry Pi digital-signage player built to replace an unreliable piSignage deployment.
 
-**Current development line: main — 0.3.0-rc8**
+**Current development line: main — 0.3.0-rc9**
 
 ## Validated baseline
 
