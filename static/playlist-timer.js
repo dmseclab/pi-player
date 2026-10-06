@@ -43,7 +43,7 @@
       input.placeholder = "Auto";
       input.setAttribute("aria-label", "Automatic video display time");
       input.setAttribute("title", "Automatic: video plays to its natural end");
-      if (label) label.textContent = "Display time — Auto (video length)";
+      if (label && label.textContent !== "Display time — Auto (video length)") label.textContent = "Display time — Auto (video length)";
       if (!hidden) {
         hidden = document.createElement("input");
         hidden.type = "hidden";
@@ -59,7 +59,7 @@
       input.placeholder = "";
       input.setAttribute("aria-label", "Display time in seconds");
       input.setAttribute("title", "How long this slide should stay on screen");
-      if (label) label.textContent = "Display time (seconds)";
+      if (label && label.textContent !== "Display time (seconds)") label.textContent = "Display time (seconds)";
       hidden?.remove();
     }
   }
