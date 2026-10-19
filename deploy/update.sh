@@ -93,8 +93,10 @@ expected="$("$APP_DIR/.venv/bin/python" -c "import sys;sys.path.insert(0,'$APP_D
 systemctl start pi-player-api.service
 health_check "$expected"
 resume_timers
-# The Pi appliance owns Chromium through its graphical tty1 session.
-if systemctl is-active --quiet getty@tty1.service; then systemctl restart getty@tty1.service; fi
+# Keep the existing graphical tty1 session intact during routine updates.
+# The player fetches playlist/runtime data from the restarted API, while the
+# watchdog remains responsible for recovering a missing or stalled Chromium
+# session. Static admin changes become visible when the admin page is reloaded.
 changed=0
 rm -rf "$work"
 trap - ERR
