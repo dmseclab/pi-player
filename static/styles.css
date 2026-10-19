@@ -46,3 +46,20 @@
   #branding-form .branding-form-footer{align-items:stretch;flex-direction:column}
   #branding-form .branding-form-footer button{width:100%}
 }
+
+
+/* v1 branding compact two-column layout */
+#branding-form .branding-layout{display:grid;gap:48px;grid-template-columns:minmax(420px,1.1fr) minmax(360px,.9fr);max-width:1280px}
+#branding-form .branding-details,#branding-form .branding-assets{min-width:0}
+#branding-form .branding-layout h3{border-bottom:1px solid var(--line);color:var(--text);font-size:14px;margin:4px 0 14px;padding-bottom:8px}
+#branding-form .branding-details .form-row{max-width:620px}
+#branding-form .branding-colours{display:flex;flex-wrap:wrap;gap:28px;margin-bottom:14px}
+#branding-form .branding-colours .form-row{margin-bottom:0}
+#branding-form .branding-logo-section{display:grid;gap:8px;margin-top:8px;max-width:560px}
+#branding-form .branding-file-picker{max-width:560px}
+#branding-form .branding-options-section{border-top:1px solid var(--line);display:grid;gap:8px;margin-top:18px;max-width:560px;padding-top:14px}
+#branding-form .branding-save{margin-top:14px;min-width:130px}
+@media(max-width:1000px){
+  #branding-form .branding-layout{gap:28px;grid-template-columns:1fr}
+  #branding-form .branding-details .form-row,#branding-form .branding-logo-section,#branding-form .branding-file-picker,#branding-form .branding-options-section{max-width:620px}
+}
