@@ -33,3 +33,16 @@
   #branding-form .branding-logo-actions button{width:100%}
   #branding-form .branding-file-name{min-width:0}
 }
+
+/* v1 branding layout density */
+#branding-form .branding-bottom-grid{border-top:1px solid var(--line);display:grid;gap:32px;grid-template-columns:minmax(0,1fr) minmax(260px,.65fr);margin-top:4px;padding-top:16px}
+#branding-form .branding-logo-section,#branding-form .branding-options-section{display:grid;gap:8px}
+#branding-form .branding-options-section{align-content:start}
+#branding-form .branding-form-footer{align-items:center;display:flex;gap:16px;justify-content:flex-end;margin-top:16px}
+#branding-form .branding-form-footer #branding-message{margin-right:auto}
+#branding-form .branding-form-footer button{min-width:130px}
+@media(max-width:820px){
+  #branding-form .branding-bottom-grid{grid-template-columns:1fr}
+  #branding-form .branding-form-footer{align-items:stretch;flex-direction:column}
+  #branding-form .branding-form-footer button{width:100%}
+}
