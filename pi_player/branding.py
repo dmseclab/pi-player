@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -32,8 +34,8 @@ _LOGO_TYPES = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
     ".webp": "image/webp",
-    ".svg": "image/svg+xml",
 }
+_ALLOWED_LOGO_FILES = {f"logo{suffix}" for suffix in _LOGO_TYPES}
 
 
 class BrandingSettingsRequest(BaseModel):
@@ -59,8 +61,26 @@ def _clean_color(value: str, label: str) -> str:
     return color
 
 
+def _content_matches_logo_type(suffix: str, content: bytes) -> bool:
+    if suffix == ".png":
+        return content.startswith(b"\x89PNG\r\n\x1a\n")
+    if suffix in {".jpg", ".jpeg"}:
+        return content.startswith(b"\xff\xd8\xff")
+    if suffix == ".webp":
+        return len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    return False
+
+
+def _stored_logo_path(conn) -> Path | None:
+    filename = (get_setting(conn, "branding_logo_path", "") or "").strip()
+    if filename not in _ALLOWED_LOGO_FILES:
+        return None
+    path = BRANDING_DIR / filename
+    return path if path.is_file() else None
+
+
 def _branding_from_db(conn) -> dict[str, Any]:
-    logo_path = get_setting(conn, "branding_logo_path", "") or ""
+    logo_path = _stored_logo_path(conn)
     return {
         "product_name": get_setting(conn, "branding_product_name", DEFAULT_BRANDING["product_name"]) or DEFAULT_BRANDING["product_name"],
         "company_name": get_setting(conn, "branding_company_name", DEFAULT_BRANDING["company_name"]) or "",
@@ -71,17 +91,9 @@ def _branding_from_db(conn) -> dict[str, Any]:
         "support_url": get_setting(conn, "branding_support_url", DEFAULT_BRANDING["support_url"]) or "",
         "footer_text": get_setting(conn, "branding_footer_text", DEFAULT_BRANDING["footer_text"]) or "",
         "show_powered_by": (get_setting(conn, "branding_show_powered_by", "1") or "1") == "1",
-        "logo_configured": bool(logo_path and Path(logo_path).is_file()),
-        "logo_url": "/api/branding/logo" if logo_path and Path(logo_path).is_file() else "",
+        "logo_configured": logo_path is not None,
+        "logo_url": "/api/branding/logo" if logo_path is not None else "",
     }
-
-
-def _stored_logo_path(conn) -> Path | None:
-    value = (get_setting(conn, "branding_logo_path", "") or "").strip()
-    if not value:
-        return None
-    path = Path(value)
-    return path if path.is_file() else None
 
 
 @app.get("/api/branding")
@@ -149,7 +161,7 @@ async def upload_branding_logo(
     suffix = Path(file.filename or "").suffix.lower()
     expected_type = _LOGO_TYPES.get(suffix)
     if expected_type is None:
-        raise HTTPException(status_code=400, detail="Logo must be PNG, JPEG, WebP or SVG")
+        raise HTTPException(status_code=400, detail="Logo must be PNG, JPEG or WebP")
     if file.content_type and file.content_type.lower() != expected_type:
         raise HTTPException(status_code=400, detail="Logo file type does not match its extension")
 
@@ -158,16 +170,28 @@ async def upload_branding_logo(
         raise HTTPException(status_code=400, detail="Logo file is empty")
     if len(content) > MAX_LOGO_BYTES:
         raise HTTPException(status_code=413, detail="Logo must be 2 MB or smaller")
+    if not _content_matches_logo_type(suffix, content):
+        raise HTTPException(status_code=400, detail="Logo content does not match its file type")
 
     BRANDING_DIR.mkdir(parents=True, exist_ok=True)
     destination = BRANDING_DIR / f"logo{suffix}"
-    temp_path = BRANDING_DIR / f".logo-upload{suffix}.tmp"
-    temp_path.write_bytes(content)
-    temp_path.replace(destination)
+    temp_path: Path | None = None
+    try:
+        fd, temp_name = tempfile.mkstemp(prefix=".logo-upload-", suffix=".tmp", dir=BRANDING_DIR)
+        temp_path = Path(temp_name)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temp_path.replace(destination)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
     with db() as conn:
         previous = _stored_logo_path(conn)
-        set_setting(conn, "branding_logo_path", str(destination))
+        set_setting(conn, "branding_logo_path", destination.name)
         audit(conn, user, "branding.logo.upload", details={"filename": file.filename or "", "size_bytes": len(content)})
         result = _branding_from_db(conn)
 
