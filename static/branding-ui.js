@@ -27,6 +27,8 @@
     $("#branding-company-name").value = data.company_name || "";
     $("#branding-primary-color").value = data.primary_color || "#0F2F2B";
     $("#branding-secondary-color").value = data.secondary_color || "#7FAFA8";
+    $("#branding-primary-color-value").textContent = $("#branding-primary-color").value.toUpperCase();
+    $("#branding-secondary-color-value").textContent = $("#branding-secondary-color").value.toUpperCase();
     $("#branding-support-name").value = data.support_name || "";
     $("#branding-support-email").value = data.support_email || "";
     $("#branding-support-url").value = data.support_url || "";
@@ -100,6 +102,8 @@
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || "Unable to upload logo");
       input.value = "";
+      const fileName = $("#branding-logo-file-name");
+      if (fileName) fileName.textContent = "No file selected";
       fillBranding(result);
       showMessage("Logo uploaded.");
     } catch (error) {
@@ -130,6 +134,26 @@
     form.addEventListener("submit", saveBranding);
     $("#branding-logo-upload")?.addEventListener("click", uploadLogo);
     $("#branding-logo-remove")?.addEventListener("click", removeLogo);
+
+    $("#branding-logo-file")?.addEventListener("change", (event) => {
+      const fileName = $("#branding-logo-file-name");
+      if (fileName) fileName.textContent = event.target.files?.[0]?.name || "No file selected";
+    });
+
+    $(".branding-file-button")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        $("#branding-logo-file")?.click();
+      }
+    });
+
+    $("#branding-primary-color")?.addEventListener("input", (event) => {
+      $("#branding-primary-color-value").textContent = event.target.value.toUpperCase();
+    });
+    $("#branding-secondary-color")?.addEventListener("input", (event) => {
+      $("#branding-secondary-color-value").textContent = event.target.value.toUpperCase();
+    });
+
     loadBranding();
   });
 })();
