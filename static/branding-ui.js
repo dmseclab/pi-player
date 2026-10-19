@@ -9,6 +9,19 @@
     node.classList.toggle("error", isError);
   }
 
+  function renderLogo(data) {
+    const configured = Boolean(data.logo_configured && data.logo_url);
+    $("#branding-logo-status").textContent = configured ? "Configured" : "Not configured";
+    const preview = $("#branding-logo-preview");
+    const remove = $("#branding-logo-remove");
+    if (preview) {
+      preview.classList.toggle("hidden", !configured);
+      if (configured) preview.src = `${data.logo_url}?v=${Date.now()}`;
+      else preview.removeAttribute("src");
+    }
+    if (remove) remove.disabled = !configured;
+  }
+
   function fillBranding(data) {
     $("#branding-product-name").value = data.product_name || "Pi Player";
     $("#branding-company-name").value = data.company_name || "";
@@ -19,7 +32,7 @@
     $("#branding-support-url").value = data.support_url || "";
     $("#branding-footer-text").value = data.footer_text || "";
     $("#branding-show-powered-by").checked = data.show_powered_by !== false;
-    $("#branding-logo-status").textContent = data.logo_configured ? "Configured" : "Not configured";
+    renderLogo(data);
   }
 
   async function loadBranding() {
@@ -63,10 +76,60 @@
     }
   }
 
+  async function uploadLogo() {
+    const input = $("#branding-logo-file");
+    const file = input?.files?.[0];
+    if (!file) {
+      showMessage("Choose a logo file first.", true);
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      showMessage("Logo must be 2 MB or smaller.", true);
+      return;
+    }
+
+    const data = new FormData();
+    data.append("file", file);
+    showMessage("Uploading logo...");
+    try {
+      const response = await fetch("/api/branding/logo", {
+        method: "POST",
+        credentials: "same-origin",
+        body: data,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Unable to upload logo");
+      input.value = "";
+      fillBranding(result);
+      showMessage("Logo uploaded.");
+    } catch (error) {
+      showMessage(error.message, true);
+    }
+  }
+
+  async function removeLogo() {
+    if (!confirm("Remove the configured branding logo?")) return;
+    showMessage("Removing logo...");
+    try {
+      const response = await fetch("/api/branding/logo", {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "Unable to remove logo");
+      fillBranding(result);
+      showMessage("Logo removed.");
+    } catch (error) {
+      showMessage(error.message, true);
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
     const form = $("#branding-form");
     if (!form) return;
     form.addEventListener("submit", saveBranding);
+    $("#branding-logo-upload")?.addEventListener("click", uploadLogo);
+    $("#branding-logo-remove")?.addEventListener("click", removeLogo);
     loadBranding();
   });
 })();
