@@ -10,9 +10,10 @@ from . import video_support as _video_support  # noqa: F401
 from . import appliance as _appliance  # noqa: F401
 from . import playback_monitor as _playback_monitor  # noqa: F401
 from . import player_info as _player_info  # noqa: F401
+from . import branding as _branding  # noqa: F401
 from .db import db, get_setting
 
-_SETUP_ALLOWED=("/setup","/api/setup/","/api/health","/api/player/","/player","/static/","/favicon.ico")
+_SETUP_ALLOWED=("/setup","/api/setup/","/api/health","/api/player/","/api/branding","/player","/static/","/favicon.ico")
 
 @app.middleware("http")
 async def enforce_first_time_setup(request:Request,call_next):
