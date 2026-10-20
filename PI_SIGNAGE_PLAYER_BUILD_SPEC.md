@@ -1,5 +1,11 @@
 # Pi Signage Player Replacement Build Spec
 
+> **Historical design document**
+>
+> This file records the original requirements, design choices, implementation phases and open questions used while Pi Player was being developed. It is intentionally preserved as project history and should not be interpreted as the current v1 feature list or deployment guide.
+>
+> Pi Player v1.0.0 has since been completed and validated with capabilities that extend beyond several of the original first-pass requirements below, including video and PDF playback, appliance provisioning, health monitoring and watchdog recovery. See `README.md` for the current stable product description and `DEPLOYMENT_NOTES.md` for current deployment and maintenance guidance.
+
 ## Goal
 
 Build a lightweight Raspberry Pi OS signage player to replace the current legacy piSignage player.
