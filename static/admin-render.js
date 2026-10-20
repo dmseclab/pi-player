@@ -25,14 +25,6 @@ function timingDescription(asset) {
   if(asset?.type==='pdf'&&asset.pdf_play_once)return `${asset.pdf_page_count||'?'} × ${asset.pdf_page_seconds||10}s — all pages once`;
   return 'Auto — video length';
 }
-function syncAddItemTiming(form) {
-  const asset=state.assets.find(a=>a.id===form.querySelector('[name="asset_id"]').value);
-  const input=form.querySelector('[name="duration_seconds"]'),label=form.querySelector('[data-timer-label]');
-  if(automaticTiming(asset)){
-    if(!input.disabled)input.dataset.previousValue=input.value||'15';
-    input.disabled=true;input.value='';input.placeholder='Auto';label.textContent=timingDescription(asset);
-  }else{input.disabled=false;if(!input.value)input.value=input.dataset.previousValue||'15';input.placeholder='';label.textContent='Display time (seconds)';}
-}
 function initializeAdminControls() {
   const upload=document.querySelector('#upload-form');
   upload.querySelector('.asset-actions').insertAdjacentHTML('beforebegin','<div id="video-upload-options" class="hidden"><label><input type="checkbox" name="video_muted" checked> Muted</label><label><input type="checkbox" name="video_loop"> Loop video</label></div>');
@@ -41,7 +33,7 @@ function initializeAdminControls() {
   const sync=()=>{document.querySelector('#video-upload-options').classList.toggle('hidden',!file.files?.[0]?.name.match(/\.(mp4|webm)$/i));};
   file.addEventListener('change',sync);upload.addEventListener('reset',()=>setTimeout(sync,0));
   upload.addEventListener('formdata',e=>{for(const field of ['video_muted','video_loop','pdf_play_once'])e.formData.set(field,String(!!upload.querySelector(`[name="${field}"]`)?.checked));});
-  document.querySelector('#link-form .asset-actions').insertAdjacentHTML('beforebegin','<label>Zoom (%)<input id="link-zoom-percent" type="number" min="50" max="200" value="100"></label><label>Reload every (seconds, 0 = each visit)<input id="link-reload-seconds" type="number" min="0" max="86400" value="0"></label><button type="button" id="test-link">Test Link</button>');
-  document.querySelector('#playlist-form').insertAdjacentHTML('afterend','<div class="toolbar"><button type="button" id="import-playlist">Import Playlist Package</button><input id="playlist-package-file" type="file" accept=".zip" hidden></div>');
+  document.querySelector('#link-form .asset-actions').insertAdjacentHTML('beforebegin','<label>Zoom (%)<input id="link-zoom-percent" type="number" min="50" max="200" value="100"></label><label>Reload every (seconds, 0 = each visit)<input id="link-reload-seconds" type="number" min="0" max="86400" value="0"></label><button type="button" class="primary" id="test-link">Test Link</button>');
+  document.querySelector('#playlist-form button[type="submit"]').insertAdjacentHTML('afterend','<button type="button" id="import-playlist">Import Playlist</button><input id="playlist-package-file" type="file" accept=".zip" hidden>');
 }
 async function refreshAssetsAndPlaylists(){await loadAssets();await Promise.all([loadPlaylists(),loadStatus()]);}

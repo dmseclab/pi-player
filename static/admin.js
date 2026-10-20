@@ -90,7 +90,6 @@ async function loadStatus() {
     <div><strong>IP addresses</strong><br><span class="muted">${escapeHtml((window.location.hostname.match(/^(localhost|127\.)/) ? status.ip_addresses.join(", ") : window.location.hostname) || "Unknown")}</span></div>
     <div><strong>Assets</strong><br><span class="muted">${status.asset_count}</span></div>
     <div><strong>Disk</strong><br><span class="muted">${bytes(status.disk.free)} free, ${diskUsed}% used</span></div>
-    <div><strong>SSH</strong><br><span class="muted">Port ${status.ssh_port}</span></div>
     <div><strong>Current slide</strong><br><span class="muted">${escapeHtml(runtime.asset_name||"None")} ${runtime.page?`— page ${runtime.page}`:""}</span></div>
     <div><strong>Player heartbeat</strong><br><span class="muted">${runtime.stalled?"Stalled":runtime.heartbeat_age_seconds==null?"Waiting":`${runtime.heartbeat_age_seconds}s ago`} · ${escapeHtml(runtime.phase||"")}</span></div>
     <div><strong>Last successful transition</strong><br><span class="muted">${escapeHtml(runtime.last_transition||"None yet")}</span></div>
@@ -167,14 +166,6 @@ async function loadPlaylists() {
         <button data-export-playlist="${playlist.id}">Export</button>
         <button class="danger" data-delete-playlist="${playlist.id}">Delete</button>
       </div>
-      <form class="toolbar" data-add-item="${playlist.id}">
-        <select name="asset_id" required>
-          <option value="">Select asset</option>
-          ${state.assets.map((asset) => `<option value="${asset.id}">${escapeHtml(asset.name)} (${asset.type})</option>`).join("")}
-        </select>
-        <label class="playlist-timer-field"><span data-timer-label>Display time (seconds)</span><input name="duration_seconds" type="number" min="1" max="86400" value="15"></label>
-        <button class="primary" type="submit">Add Item</button>
-      </form>
       ${renderPlaylistItems(playlist)}
     </section>
   `).join("");
@@ -191,7 +182,7 @@ function renderPlaylistItems(playlist) {
             <td><input data-item-position="${playlist.id}:${item.id}" type="number" min="0" value="${item.position}"></td>
             <td>${escapeHtml(item.asset_name)}</td>
             <td>${automaticTiming(state.assets.find(a=>a.id===item.asset_id))?`<span class="pill">${timingDescription(state.assets.find(a=>a.id===item.asset_id))}</span>`:`<input data-item-duration="${playlist.id}:${item.id}" type="number" min="1" max="86400" value="${item.duration_seconds}">`}</td>
-            <td><input data-item-enabled="${playlist.id}:${item.id}" type="checkbox" ${item.enabled ? "checked" : ""}></td>
+            <td><label class="playlist-switch" title="${item.enabled ? "Enabled" : "Disabled"}"><input data-item-enabled="${playlist.id}:${item.id}" type="checkbox" ${item.enabled ? "checked" : ""} aria-label="Enable ${escapeHtml(item.asset_name)}"><span class="playlist-switch-track" aria-hidden="true"></span></label></td>
             <td><button class="danger" data-delete-item="${playlist.id}:${item.id}">Remove</button></td>
           </tr>
         `).join("")}
@@ -300,7 +291,6 @@ document.addEventListener("click", async (event) => {
 
 document.addEventListener("change", async (event) => {
   const target = event.target;
-  if(target.name==='asset_id'&&target.closest('[data-add-item]')){syncAddItemTiming(target.closest('form'));return;}
   if(target.id==='playlist-package-file'&&target.files?.[0]){
     const data=new FormData();data.append('file',target.files[0]);
     await api('/api/playlists/import',{method:'POST',body:data});target.value='';await refreshAssetsAndPlaylists();return;
@@ -355,21 +345,6 @@ $("#playlist-form").addEventListener("submit", async (event) => {
   await Promise.all([loadPlaylists(), loadStatus()]);
 });
 
-$("#playlist-list").addEventListener("submit", async (event) => {
-  const form = event.target.closest("[data-add-item]");
-  if (!form) return;
-  event.preventDefault();
-  const formData = new FormData(form);
-  await api(`/api/playlists/${form.dataset.addItem}/items`, {
-    method: "POST",
-    body: JSON.stringify({
-      asset_id: formData.get("asset_id"),
-      duration_seconds: Number(formData.get("duration_seconds")||15),
-      enabled: true,
-    }),
-  });
-  await loadPlaylists();
-});
 
 $("#settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();

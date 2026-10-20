@@ -22,7 +22,27 @@
     if (remove) remove.disabled = !configured;
   }
 
+  function darkenHex(hex, amount = 0.22) {
+    const value = String(hex || "").replace("#", "");
+    if (!/^[0-9a-fA-F]{6}$/.test(value)) return "#174F4B";
+    const channels = [0, 2, 4].map((offset) =>
+      Math.max(0, Math.round(parseInt(value.slice(offset, offset + 2), 16) * (1 - amount)))
+    );
+    return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+  }
+
+  function applyBrandingTheme(data) {
+    const primary = data.primary_color || "#226C67";
+    const secondary = data.secondary_color || "#142422";
+    const root = document.documentElement;
+
+    root.style.setProperty("--accent", primary);
+    root.style.setProperty("--accent-strong", darkenHex(primary));
+    root.style.setProperty("--brand-secondary", secondary);
+  }
+
   function fillBranding(data) {
+    applyBrandingTheme(data);
     $("#branding-product-name").value = data.product_name || "Pi Player";
     $("#branding-company-name").value = data.company_name || "";
     $("#branding-primary-color").value = data.primary_color || "#0F2F2B";

@@ -11,8 +11,9 @@ w.fetch=async p=>({ok:true,status:200,text:async()=>JSON.stringify(p==='/api/ass
 let mutations=0;const obs=new w.MutationObserver(rs=>mutations+=rs.length);obs.observe(w.document.body,{childList:true,subtree:true});
 for(const file of scripts){const s=w.document.createElement('script');s.textContent=fs.readFileSync(root+'/static/'+file,'utf8');w.document.body.appendChild(s);}
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
-(async()=>{await wait(600);const first=mutations;await wait(300);assert.equal(mutations,first,'Full admin did not settle');w.document.querySelector('[data-tab="assets"]').click();assert.equal(w.document.querySelector('#tab-assets').classList.contains('hidden'),false);w.document.querySelector('#refresh-assets').click();await wait(400);const second=mutations;await wait(300);assert.equal(mutations,second,'Refresh did not settle');assert.equal(w.document.querySelectorAll('script').length,3);
+(async()=>{await wait(600);const first=mutations;await wait(300);assert.equal(mutations,first,'Full admin did not settle');w.document.querySelector('[data-tab="content"]').click();assert.equal(w.document.querySelector('#tab-content').classList.contains('hidden'),false);w.document.querySelector('#refresh-assets').click();await wait(400);const second=mutations;await wait(300);assert.equal(mutations,second,'Refresh did not settle');assert.equal(w.document.querySelectorAll('script').length,3);
   assert.ok(!scripts.some(file=>/video-ui|playlist-timer|image-mode/.test(file)));
+  assert.equal(w.document.querySelector('[data-add-item]'),null,'Manual playlist add UI must remain removed');
   const video=assets.find(a=>a.type==='video');
   w.document.querySelector(`[data-edit-asset="${video.id}"]`).click();await wait(100);
   assert.ok(w.document.querySelector('[data-video-muted]'));
@@ -21,10 +22,6 @@ const wait=ms=>new Promise(r=>setTimeout(r,ms));
   const pdf=assets.find(a=>a.type==='pdf');
   w.document.querySelector(`[data-edit-asset="${pdf.id}"]`).click();await wait(100);
   assert.ok(w.document.querySelector('[data-asset-edit-pdf-once]'));
-  const select=w.document.querySelector('[data-add-item] select');
-  select.value=video.id;select.dispatchEvent(new w.Event('change',{bubbles:true}));
-  assert.equal(select.closest('form').querySelector('[name="duration_seconds"]').disabled,true);
-  select.value=pdf.id;select.dispatchEvent(new w.Event('change',{bubbles:true}));
-  assert.equal(select.closest('form').querySelector('[name="duration_seconds"]').disabled,false);
+  assert.ok(w.document.body.textContent.includes('Auto — video length'));
   await wait(250);const final=mutations;await wait(150);assert.equal(mutations,final);
-  console.log('PASS: direct admin rendering, mixed assets, refresh, edit controls and automatic timing');})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>{obs.disconnect();w.close()});
+  console.log('PASS: direct admin rendering, Content workspace, mixed assets, refresh, edit controls and automatic timing');})().catch(e=>{console.error(e);process.exitCode=1}).finally(()=>{obs.disconnect();w.close()});
