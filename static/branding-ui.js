@@ -20,6 +20,13 @@
       else preview.removeAttribute("src");
     }
     if (remove) remove.disabled = !configured;
+
+    const topbarLogo = $("#topbar-brand-logo");
+    if (topbarLogo) {
+      topbarLogo.classList.toggle("hidden", !configured);
+      if (configured) topbarLogo.src = `${data.logo_url}?v=${Date.now()}`;
+      else topbarLogo.removeAttribute("src");
+    }
   }
 
   function darkenHex(hex, amount = 0.22) {
@@ -41,14 +48,41 @@
     root.style.setProperty("--brand-secondary", secondary);
   }
 
+  function syncColourPreset(colourSelector, presetSelector) {
+    const colour = $(colourSelector);
+    const preset = $(presetSelector);
+    if (!colour || !preset) return;
+
+    const value = colour.value.toUpperCase();
+    const match = Array.from(preset.options).find(
+      (option) => option.value && option.value.toUpperCase() === value
+    );
+    preset.value = match ? match.value : "";
+  }
+
+  function applyColourPreset(presetSelector, colourSelector, outputSelector) {
+    const preset = $(presetSelector);
+    const colour = $(colourSelector);
+    const output = $(outputSelector);
+    if (!preset || !colour || !preset.value) return;
+
+    colour.value = preset.value;
+    if (output) output.textContent = colour.value.toUpperCase();
+  }
+
   function fillBranding(data) {
     applyBrandingTheme(data);
     $("#branding-product-name").value = data.product_name || "Pi Player";
+    const topbarProductName = $("#topbar-product-name");
+    if (topbarProductName) topbarProductName.textContent = data.product_name || "Pi Player";
     $("#branding-company-name").value = data.company_name || "";
+    $("#branding-display-message").value = data.display_message || "";
     $("#branding-primary-color").value = data.primary_color || "#0F2F2B";
     $("#branding-secondary-color").value = data.secondary_color || "#7FAFA8";
     $("#branding-primary-color-value").textContent = $("#branding-primary-color").value.toUpperCase();
     $("#branding-secondary-color-value").textContent = $("#branding-secondary-color").value.toUpperCase();
+    syncColourPreset("#branding-primary-color", "#branding-primary-preset");
+    syncColourPreset("#branding-secondary-color", "#branding-secondary-preset");
     $("#branding-support-name").value = data.support_name || "";
     $("#branding-support-email").value = data.support_email || "";
     $("#branding-support-url").value = data.support_url || "";
@@ -73,6 +107,7 @@
     const payload = {
       product_name: $("#branding-product-name").value.trim(),
       company_name: $("#branding-company-name").value.trim(),
+      display_message: $("#branding-display-message").value.trim(),
       primary_color: $("#branding-primary-color").value.toUpperCase(),
       secondary_color: $("#branding-secondary-color").value.toUpperCase(),
       support_name: $("#branding-support-name").value.trim(),
@@ -167,11 +202,28 @@
       }
     });
 
+    $("#branding-primary-preset")?.addEventListener("change", () => {
+      applyColourPreset(
+        "#branding-primary-preset",
+        "#branding-primary-color",
+        "#branding-primary-color-value"
+      );
+    });
+    $("#branding-secondary-preset")?.addEventListener("change", () => {
+      applyColourPreset(
+        "#branding-secondary-preset",
+        "#branding-secondary-color",
+        "#branding-secondary-color-value"
+      );
+    });
+
     $("#branding-primary-color")?.addEventListener("input", (event) => {
       $("#branding-primary-color-value").textContent = event.target.value.toUpperCase();
+      syncColourPreset("#branding-primary-color", "#branding-primary-preset");
     });
     $("#branding-secondary-color")?.addEventListener("input", (event) => {
       $("#branding-secondary-color-value").textContent = event.target.value.toUpperCase();
+      syncColourPreset("#branding-secondary-color", "#branding-secondary-preset");
     });
 
     loadBranding();

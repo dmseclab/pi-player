@@ -264,7 +264,6 @@ document.addEventListener("click", async (event) => {
       endpoint+='/image-settings';
     } else if(asset.type==='pdf') {
       payload.pdf_page_seconds=Number(row.querySelector('[data-asset-edit-pdf-seconds]').value);
-      payload.pdf_play_once=row.querySelector('[data-asset-edit-pdf-once]').checked;
     }
     await api(endpoint,{method:'PUT',body:JSON.stringify(payload)});
     state.editingAssetId = null;

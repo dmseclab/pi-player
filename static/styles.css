@@ -283,3 +283,91 @@
   margin:0;
   margin-right:auto;
 }
+
+
+/* v1.0.1 branded player startup and idle screen */
+.player-brand-screen{
+  background:#050707;
+  gap:0;
+  transform:translateY(-8vh);
+}
+.player-brand-header{
+  align-items:center;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  margin-bottom:22px;
+  width:100%;
+}
+.stage img.player-brand-logo{
+  background:transparent;
+  display:block;
+  height:auto;
+  margin-left:auto;
+  margin-right:auto;
+  max-height:190px;
+  max-width:min(560px,70vw);
+  object-fit:contain;
+  width:auto;
+}
+.player-brand-name{
+  font-size:2em;
+  font-weight:750;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.player-brand-header > .player-brand-message{
+  border-bottom:2px solid var(--player-brand-primary);
+  color:var(--player-brand-secondary);
+  font-size:1.15em;
+  font-weight:650;
+  margin:22px auto 0;
+  padding-bottom:18px;
+  text-align:center;
+  width:min(520px,70vw);
+}
+.player-brand-product{
+  font-size:.8em;
+  font-weight:650;
+  letter-spacing:.06em;
+  margin-bottom:18px;
+  opacity:.8;
+}
+.player-brand-info{
+  font-size:.72em;
+  line-height:1.6;
+}
+.player-brand-status{
+  font-size:.78em;
+  margin-top:26px;
+  min-width:min(520px,70vw);
+  opacity:.85;
+}
+.player-powered-by{
+  bottom:calc(24px - 8vh);
+  font-size:.52em;
+  left:0;
+  letter-spacing:.04em;
+  opacity:.5;
+  position:absolute;
+  text-align:center;
+  width:100%;
+}
+
+
+/* v1.0.1 admin navbar branding */
+.topbar .topbar-brand-logo{
+  background:transparent;
+  flex:0 0 auto;
+  height:34px;
+  max-width:180px;
+  object-fit:contain;
+  width:auto;
+}
+
+
+/* v1.0.1 branding colour presets */
+#branding-form .branding-colour-control select{
+  min-width:110px;
+  width:auto;
+}

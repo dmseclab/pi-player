@@ -17,6 +17,7 @@ from .main import app, require_user
 DEFAULT_BRANDING = {
     "product_name": "Pi Player",
     "company_name": "",
+    "display_message": "",
     "primary_color": "#0F2F2B",
     "secondary_color": "#7FAFA8",
     "support_name": "",
@@ -41,6 +42,7 @@ _ALLOWED_LOGO_FILES = {f"logo{suffix}" for suffix in _LOGO_TYPES}
 class BrandingSettingsRequest(BaseModel):
     product_name: str = Field(min_length=1, max_length=80)
     company_name: str = Field(default="", max_length=120)
+    display_message: str = Field(default="", max_length=120)
     primary_color: str = Field(default=DEFAULT_BRANDING["primary_color"], min_length=7, max_length=7)
     secondary_color: str = Field(default=DEFAULT_BRANDING["secondary_color"], min_length=7, max_length=7)
     support_name: str = Field(default="", max_length=120)
@@ -84,6 +86,7 @@ def _branding_from_db(conn) -> dict[str, Any]:
     return {
         "product_name": get_setting(conn, "branding_product_name", DEFAULT_BRANDING["product_name"]) or DEFAULT_BRANDING["product_name"],
         "company_name": get_setting(conn, "branding_company_name", DEFAULT_BRANDING["company_name"]) or "",
+        "display_message": get_setting(conn, "branding_display_message", DEFAULT_BRANDING["display_message"]) or "",
         "primary_color": get_setting(conn, "branding_primary_color", DEFAULT_BRANDING["primary_color"]) or DEFAULT_BRANDING["primary_color"],
         "secondary_color": get_setting(conn, "branding_secondary_color", DEFAULT_BRANDING["secondary_color"]) or DEFAULT_BRANDING["secondary_color"],
         "support_name": get_setting(conn, "branding_support_name", DEFAULT_BRANDING["support_name"]) or "",
@@ -115,6 +118,7 @@ def update_branding(
     values = {
         "branding_product_name": product_name,
         "branding_company_name": _clean_text(payload.company_name),
+        "branding_display_message": _clean_text(payload.display_message),
         "branding_primary_color": _clean_color(payload.primary_color, "Primary colour"),
         "branding_secondary_color": _clean_color(payload.secondary_color, "Secondary colour"),
         "branding_support_name": _clean_text(payload.support_name),

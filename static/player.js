@@ -13,7 +13,43 @@ function report(event, message=null, page=null) {
   });
 }
 async function loadPlayerInfo(){try{const r=await fetch('/api/player/info',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(r.ok)playerInfo=await r.json();}catch(_){}}
-function splash(waiting=false){const ip=playerInfo?.ip_addresses?.[0]||'Waiting for network...',host=playerInfo?.hostname||'pi-player';stage.innerHTML=`<div class="player-message"><div style="font-size:2em;font-weight:700;margin-bottom:.6em">PI PLAYER</div><div>Hostname: ${escapeHtml(host)}</div><div>IP Address: ${escapeHtml(ip)}</div><div>Admin: ${ip.includes('.')?`http://${escapeHtml(ip)}:8000`:'Waiting for network...'}</div><div style="margin-top:1em">${playerInfo?.setup_required?'First-time setup required':waiting?'Ready for configuration':'Starting playlist...'}</div></div>`;}
+let branding=null;
+async function loadBranding(){try{const r=await fetch('/api/branding',{cache:'no-store',signal:AbortSignal.timeout(5000)});if(r.ok)branding=await r.json();}catch(_){}}
+function splash(waiting=false){
+  const ip=playerInfo?.ip_addresses?.[0]||'Waiting for network...';
+  const host=playerInfo?.hostname||'pi-player';
+  const port=playerInfo?.admin_port||8000;
+  const product=branding?.product_name||'Pi Player';
+  const message=(branding?.display_message||'').trim();
+  const primary=branding?.primary_color||'#0F2F2B';
+  const secondary=branding?.secondary_color||'#7FAFA8';
+  const status=playerInfo?.setup_required
+    ? 'First-time setup required'
+    : waiting
+      ? 'Player stopped — Ready for configuration'
+      : 'Starting player...';
+  const logo=branding?.logo_configured&&branding?.logo_url
+    ? `<img class="player-brand-logo" src="${escapeHtml(branding.logo_url)}?v=${Date.now()}" alt="${escapeHtml(product)} logo">`
+    : `<div class="player-brand-name">${escapeHtml(product)}</div>`;
+  const poweredBy=branding?.show_powered_by
+    ? `<div class="player-powered-by">Powered by Pi Player</div>`
+    : '';
+
+  stage.innerHTML=`<div class="player-message player-brand-screen" style="--player-brand-primary:${escapeHtml(primary)};--player-brand-secondary:${escapeHtml(secondary)}">
+    <div class="player-brand-header">
+      ${logo}
+      ${message?`<div class="player-brand-message">${escapeHtml(message)}</div>`:''}
+    </div>
+    <div class="player-brand-product">${escapeHtml(product)}</div>
+    <div class="player-brand-info">
+      <div>Hostname: ${escapeHtml(host)}</div>
+      <div>IP Address: ${escapeHtml(ip)}</div>
+      <div>Admin: ${ip.includes('.')?`http://${escapeHtml(ip)}:${escapeHtml(String(port))}`:'Waiting for network...'}</div>
+    </div>
+    <div class="player-brand-status">${escapeHtml(status)}</div>
+    ${poweredBy}
+  </div>`;
+}
 function signature(d){return JSON.stringify({state:d.state,playlist:d.playlist?.id,items:d.items.filter(i=>i.enabled).map(i=>[i.id,i.position,i.duration_seconds,i.asset_id,i.asset_type,i.asset_url,i.media_url,i.asset_display_mode,i.asset_zoom_percent,i.asset_reload_seconds,i.asset_video_muted,i.asset_video_loop,i.asset_pdf_page_seconds,i.asset_pdf_play_once,i.asset_file_present])});}
 async function loadPlaylist(){
   if(refreshing)return;refreshing=true;
@@ -98,7 +134,8 @@ function playCurrent(){
   if(item.asset_type==='pdf'){
     if(item.asset_file_present===false){failCurrent('PDF file missing',token);return;}
     stage.replaceChildren();
-    stopPdf=startPdfPlayback(item,stage,()=>{if(token!==generation)return;report('ready',null,1);if(!item.asset_pdf_play_once)timer=setTimeout(advance,durationMs);},error=>failCurrent(error.message||'PDF rendering failed',token),()=>{if(token===generation)advance();},page=>{if(token===generation)report('progress',null,page);});return;
+    const pdfItem={...item,asset_pdf_play_once:true};
+    stopPdf=startPdfPlayback(pdfItem,stage,()=>{if(token!==generation)return;report('ready',null,1);},error=>failCurrent(error.message||'PDF rendering failed',token),()=>{if(token===generation)advance();},page=>{if(token===generation)report('progress',null,page);});return;
   }
   if(item.asset_type==='video'){playVideo(item,durationMs,token);return;}
   if(item.asset_type==='website'){
@@ -119,4 +156,4 @@ function advance(){if(items.length)index=(index+1)%items.length;playCurrent();}
 function advanceSoon(){clearTimeout(timer);clearWebsiteReload();timer=setTimeout(advance,2000);}
 window.addEventListener('beforeunload',()=>{generation++;if(stopPdf)stopPdf();cleanupCurrentVideo();clearWebsiteReload();closeDirectWindow();});
 setInterval(()=>report('heartbeat'),10000);
-loadPlayerInfo().finally(()=>{splash(false);loadPlaylist();});setInterval(loadPlaylist,5000);
+Promise.allSettled([loadPlayerInfo(),loadBranding()]).finally(()=>{splash(false);loadPlaylist();});setInterval(loadPlaylist,5000);

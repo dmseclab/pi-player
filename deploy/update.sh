@@ -93,10 +93,12 @@ expected="$("$APP_DIR/.venv/bin/python" -c "import sys;sys.path.insert(0,'$APP_D
 systemctl start pi-player-api.service
 health_check "$expected"
 resume_timers
-# Keep the existing graphical tty1 session intact during routine updates.
-# The player fetches playlist/runtime data from the restarted API, while the
-# watchdog remains responsible for recovering a missing or stalled Chromium
-# session. Static admin changes become visible when the admin page is reloaded.
+# Reload the appliance kiosk after a successful update or rollback so Chromium
+# loads the frontend that matches the verified backend. The tty1 -> labwc
+# session is the sole kiosk owner; pi-player-kiosk.service remains unused.
+if systemctl is-active --quiet getty@tty1.service; then
+  systemctl restart getty@tty1.service
+fi
 changed=0
 rm -rf "$work"
 trap - ERR
