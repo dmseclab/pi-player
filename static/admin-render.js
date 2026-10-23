@@ -37,9 +37,9 @@ function initializeAdminControls() {
 }
 async function refreshAssetsAndPlaylists(){await loadAssets();await Promise.all([loadPlaylists(),loadStatus()]);}
 
-// Scheduling is isolated in its own module so the existing admin/player behavior remains unchanged when disabled.
+// Optional feature modules are loaded after admin.js so they can extend the existing UI.
 window.addEventListener('load',()=>{
-  const script=document.createElement('script');
-  script.src='/static/schedule-ui.js?v=dev-schedule-1';
-  document.body.appendChild(script);
+  for(const src of ['/static/schedule-ui.js?v=dev-schedule-2','/static/ntp-ui.js?v=dev-ntp-1']){
+    const script=document.createElement('script');script.src=src;document.body.appendChild(script);
+  }
 });
