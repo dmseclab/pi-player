@@ -7,12 +7,19 @@
 
   const row=document.createElement('div');
   row.className='form-row';
+  row.style.alignContent='start';
   row.innerHTML='<label for="setting-ntp-server">NTP Server</label><input id="setting-ntp-server" placeholder="NTP hostname or IP address" required><small id="setting-ntp-status" class="muted">Checking time synchronization…</small>';
 
   // Keep the NTP control in the right-hand Settings column, directly below
   // Player name and aligned with the Max upload MB row on the left.
   const uploadRow=uploadInput?.closest('.form-row');
   const nameRow=nameInput.closest('.form-row');
+  if(uploadRow){
+    // The NTP status adds a third grid row. Prevent CSS Grid from stretching the
+    // two-row upload control to the taller NTP row, which otherwise pushes its
+    // input down and makes the two fields look vertically misaligned.
+    uploadRow.style.alignContent='start';
+  }
   if(uploadRow && uploadRow.parentElement===nameRow.parentElement){
     uploadRow.insertAdjacentElement('afterend',row);
   }else{
