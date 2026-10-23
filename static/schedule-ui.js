@@ -3,67 +3,14 @@
   const dayNames=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   const originalRender=window.renderPlaylistItems;
   if(typeof originalRender!=='function')return;
-
-  function daysFor(item){
-    const raw=item.schedule_weekdays;
-    if(Array.isArray(raw))return raw.map(Number);
-    if(typeof raw==='string'&&raw.length)return raw.split(',').map(Number);
-    return [0,1,2,3,4,5,6];
-  }
-  function scheduleSummary(item){
-    if(!item.schedule_enabled)return 'Always';
-    const days=daysFor(item);
-    const all=days.length===7;
-    const dayText=all?'Daily':days.map(d=>dayNames[d]).join(', ');
-    const timeText=item.schedule_start_time||item.schedule_end_time
-      ? `${item.schedule_start_time||'00:00'}–${item.schedule_end_time||'23:59'}`:'';
-    const dateText=item.schedule_start_date||item.schedule_end_date
-      ? `${item.schedule_start_date||'…'} → ${item.schedule_end_date||'…'}`:'';
-    return [dayText,timeText,dateText].filter(Boolean).join(' · ');
-  }
-
-  window.renderPlaylistItems=function(playlist){
-    if(!playlist.items.length)return '<p class="muted">No playlist items yet.</p>';
-    return `<table class="table"><thead><tr><th>Pos</th><th>Asset</th><th>Display time</th><th>Schedule</th><th>Enabled</th><th></th></tr></thead><tbody>${playlist.items.map(item=>{
-      const asset=state.assets.find(a=>a.id===item.asset_id);
-      const timing=automaticTiming(asset)?`<span class="pill">${timingDescription(asset)}</span>`:`<input data-item-duration="${playlist.id}:${item.id}" type="number" min="1" max="86400" value="${item.duration_seconds}">`;
-      const scheduleClass=item.schedule_enabled?(item.schedule_active_now?'schedule-active':'schedule-inactive'):'';
-      return `<tr><td><input data-item-position="${playlist.id}:${item.id}" type="number" min="0" value="${item.position}"></td><td>${escapeHtml(item.asset_name)}</td><td>${timing}</td><td><button type="button" class="schedule-button ${scheduleClass}" data-edit-schedule="${playlist.id}:${item.id}">${escapeHtml(scheduleSummary(item))}</button></td><td><label class="playlist-switch" title="${item.enabled?'Enabled':'Disabled'}"><input data-item-enabled="${playlist.id}:${item.id}" type="checkbox" ${item.enabled?'checked':''} aria-label="Enable ${escapeHtml(item.asset_name)}"><span class="playlist-switch-track" aria-hidden="true"></span></label></td><td><button class="danger" data-delete-item="${playlist.id}:${item.id}">Remove</button></td></tr>`;
-    }).join('')}</tbody></table>`;
-  };
-
-  const style=document.createElement('style');
-  style.textContent=`.schedule-button{min-width:110px;text-align:left;white-space:normal}.schedule-active{border-color:#2e7d32}.schedule-inactive{opacity:.72}.schedule-modal{border:0;border-radius:10px;max-width:620px;width:calc(100% - 32px);padding:0;box-shadow:0 20px 60px rgba(0,0,0,.35)}.schedule-modal::backdrop{background:rgba(0,0,0,.45)}.schedule-modal-body{padding:20px}.schedule-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.schedule-days{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.schedule-days label{display:flex;align-items:center;gap:4px}.schedule-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.schedule-mode{margin-bottom:12px}@media(max-width:600px){.schedule-grid{grid-template-columns:1fr}}`;
-  document.head.appendChild(style);
-
-  const dialog=document.createElement('dialog');
-  dialog.className='schedule-modal';
-  dialog.innerHTML='<form method="dialog" class="schedule-modal-body" id="schedule-form"><h3>Item Schedule</h3><p class="muted" id="schedule-asset-name"></p><label class="schedule-mode"><input id="schedule-enabled" type="checkbox"> Use schedule</label><div id="schedule-fields"><div class="schedule-days">'+dayNames.map((name,i)=>`<label><input type="checkbox" data-schedule-day="${i}"> ${name}</label>`).join('')+'</div><div class="schedule-grid"><label>Start time<input id="schedule-start-time" type="time"></label><label>End time<input id="schedule-end-time" type="time"></label><label>Start date <span class="muted">(optional)</span><input id="schedule-start-date" type="date"></label><label>End date <span class="muted">(optional)</span><input id="schedule-end-date" type="date"></label></div></div><div class="schedule-actions"><button type="button" id="schedule-cancel">Cancel</button><button type="submit" class="primary" value="save">Save Schedule</button></div></form>';
-  document.body.appendChild(dialog);
-  let editing=null;
-  const fields=()=>dialog.querySelector('#schedule-fields');
-  function syncMode(){fields().classList.toggle('hidden',!dialog.querySelector('#schedule-enabled').checked);}
-  dialog.querySelector('#schedule-enabled').addEventListener('change',syncMode);
-  dialog.querySelector('#schedule-cancel').addEventListener('click',()=>dialog.close());
-
-  document.addEventListener('click',event=>{
-    const button=event.target.closest('[data-edit-schedule]');if(!button)return;
-    const [playlistId,itemId]=button.dataset.editSchedule.split(':');
-    const playlist=state.playlists.find(p=>p.id===playlistId);const item=playlist?.items.find(i=>i.id===itemId);if(!item)return;
-    editing={playlistId,itemId};dialog.querySelector('#schedule-asset-name').textContent=item.asset_name;
-    dialog.querySelector('#schedule-enabled').checked=!!item.schedule_enabled;
-    const selected=new Set(daysFor(item));dialog.querySelectorAll('[data-schedule-day]').forEach(box=>box.checked=selected.has(Number(box.dataset.scheduleDay)));
-    dialog.querySelector('#schedule-start-time').value=item.schedule_start_time||'';dialog.querySelector('#schedule-end-time').value=item.schedule_end_time||'';
-    dialog.querySelector('#schedule-start-date').value=item.schedule_start_date||'';dialog.querySelector('#schedule-end-date').value=item.schedule_end_date||'';
-    syncMode();dialog.showModal();
-  });
-
-  dialog.querySelector('#schedule-form').addEventListener('submit',async event=>{
-    event.preventDefault();if(!editing)return;
-    const enabled=dialog.querySelector('#schedule-enabled').checked;
-    const weekdays=[...dialog.querySelectorAll('[data-schedule-day]:checked')].map(box=>Number(box.dataset.scheduleDay));
-    if(enabled&&!weekdays.length){alert('Select at least one day, or choose Always.');return;}
-    const payload={schedule_enabled:enabled,schedule_start_date:dialog.querySelector('#schedule-start-date').value||null,schedule_end_date:dialog.querySelector('#schedule-end-date').value||null,schedule_weekdays:weekdays.length?weekdays:[0,1,2,3,4,5,6],schedule_start_time:dialog.querySelector('#schedule-start-time').value||null,schedule_end_time:dialog.querySelector('#schedule-end-time').value||null};
-    try{await api(`/api/playlists/${editing.playlistId}/items/${editing.itemId}`,{method:'PUT',body:JSON.stringify(payload)});dialog.close();editing=null;await loadPlaylists();}catch(error){alert(error.message||'Unable to save schedule');}
-  });
+  function daysFor(item){const raw=item.schedule_weekdays;if(Array.isArray(raw))return raw.map(Number);if(typeof raw==='string'&&raw.length)return raw.split(',').map(Number);return [0,1,2,3,4,5,6];}
+  function scheduleSummary(item){if(!item.schedule_enabled)return 'Always';const days=daysFor(item);const dayText=days.length===7?'Daily':days.map(d=>dayNames[d]).join(', ');const timeText=item.schedule_start_time||item.schedule_end_time?`${item.schedule_start_time||'00:00'}–${item.schedule_end_time||'23:59'}`:'';const dateText=item.schedule_start_date||item.schedule_end_date?`${item.schedule_start_date||'…'} → ${item.schedule_end_date||'…'}`:'';return [dayText,timeText,dateText].filter(Boolean).join(' · ');}
+  window.renderPlaylistItems=function(playlist){if(!playlist.items.length)return '<p class="muted">No playlist items yet.</p>';return `<table class="table"><thead><tr><th>Pos</th><th>Asset</th><th>Display time</th><th>Schedule</th><th>Enabled</th><th></th></tr></thead><tbody>${playlist.items.map(item=>{const asset=state.assets.find(a=>a.id===item.asset_id);const timing=automaticTiming(asset)?`<span class="pill">${timingDescription(asset)}</span>`:`<input data-item-duration="${playlist.id}:${item.id}" type="number" min="1" max="86400" value="${item.duration_seconds}">`;return `<tr><td><input data-item-position="${playlist.id}:${item.id}" type="number" min="0" value="${item.position}"></td><td>${escapeHtml(item.asset_name)}</td><td>${timing}</td><td><button type="button" class="schedule-button" data-edit-schedule="${playlist.id}:${item.id}">${escapeHtml(scheduleSummary(item))}</button></td><td><label class="playlist-switch" title="${item.enabled?'Enabled':'Disabled'}"><input data-item-enabled="${playlist.id}:${item.id}" type="checkbox" ${item.enabled?'checked':''} aria-label="Enable ${escapeHtml(item.asset_name)}"><span class="playlist-switch-track" aria-hidden="true"></span></label></td><td><button class="danger" data-delete-item="${playlist.id}:${item.id}">Remove</button></td></tr>`;}).join('')}</tbody></table>`;};
+  const style=document.createElement('style');style.textContent=`.schedule-button{min-width:110px;text-align:left;white-space:normal}.schedule-modal{border:0;border-radius:10px;max-width:620px;width:calc(100% - 32px);padding:0;box-shadow:0 20px 60px rgba(0,0,0,.35)}.schedule-modal::backdrop{background:rgba(0,0,0,.45)}.schedule-modal-body{padding:20px}.schedule-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.schedule-days{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.schedule-days label{display:flex;align-items:center;gap:4px}.schedule-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}.schedule-mode{margin-bottom:12px}@media(max-width:600px){.schedule-grid{grid-template-columns:1fr}}`;document.head.appendChild(style);
+  const dialog=document.createElement('dialog');dialog.className='schedule-modal';dialog.innerHTML='<form method="dialog" class="schedule-modal-body" id="schedule-form"><h3>Item Schedule</h3><p class="muted" id="schedule-asset-name"></p><label class="schedule-mode"><input id="schedule-enabled" type="checkbox"> Use schedule</label><div id="schedule-fields"><div class="schedule-days">'+dayNames.map((name,i)=>`<label><input type="checkbox" data-schedule-day="${i}"> ${name}</label>`).join('')+'</div><div class="schedule-grid"><label>Start time<input id="schedule-start-time" type="time"></label><label>End time<input id="schedule-end-time" type="time"></label><label>Start date <span class="muted">(optional)</span><input id="schedule-start-date" type="date"></label><label>End date <span class="muted">(optional)</span><input id="schedule-end-date" type="date"></label></div></div><div class="schedule-actions"><button type="button" id="schedule-cancel">Cancel</button><button type="submit" class="primary" value="save">Save Schedule</button></div></form>';document.body.appendChild(dialog);
+  let editing=null;const fields=()=>dialog.querySelector('#schedule-fields');function syncMode(){fields().classList.toggle('hidden',!dialog.querySelector('#schedule-enabled').checked);}dialog.querySelector('#schedule-enabled').addEventListener('change',syncMode);dialog.querySelector('#schedule-cancel').addEventListener('click',()=>dialog.close());
+  document.addEventListener('click',event=>{const button=event.target.closest('[data-edit-schedule]');if(!button)return;const [playlistId,itemId]=button.dataset.editSchedule.split(':');const playlist=state.playlists.find(p=>p.id===playlistId);const item=playlist?.items.find(i=>i.id===itemId);if(!item)return;editing={playlistId,itemId};dialog.querySelector('#schedule-asset-name').textContent=item.asset_name;dialog.querySelector('#schedule-enabled').checked=!!item.schedule_enabled;const selected=new Set(daysFor(item));dialog.querySelectorAll('[data-schedule-day]').forEach(box=>box.checked=selected.has(Number(box.dataset.scheduleDay)));dialog.querySelector('#schedule-start-time').value=item.schedule_start_time||'';dialog.querySelector('#schedule-end-time').value=item.schedule_end_time||'';dialog.querySelector('#schedule-start-date').value=item.schedule_start_date||'';dialog.querySelector('#schedule-end-date').value=item.schedule_end_date||'';syncMode();dialog.showModal();});
+  dialog.querySelector('#schedule-form').addEventListener('submit',async event=>{event.preventDefault();if(!editing)return;const enabled=dialog.querySelector('#schedule-enabled').checked;const weekdays=[...dialog.querySelectorAll('[data-schedule-day]:checked')].map(box=>Number(box.dataset.scheduleDay));if(enabled&&!weekdays.length){alert('Select at least one day, or choose Always.');return;}const payload={schedule_enabled:enabled,schedule_start_date:dialog.querySelector('#schedule-start-date').value||null,schedule_end_date:dialog.querySelector('#schedule-end-date').value||null,schedule_weekdays:weekdays.length?weekdays:[0,1,2,3,4,5,6],schedule_start_time:dialog.querySelector('#schedule-start-time').value||null,schedule_end_time:dialog.querySelector('#schedule-end-time').value||null};try{await api(`/api/playlists/${editing.playlistId}/items/${editing.itemId}`,{method:'PUT',body:JSON.stringify(payload)});dialog.close();editing=null;await loadPlaylists();}catch(error){alert(error.message||'Unable to save schedule');}});
+  // The first playlist render may have completed before this extension loaded.
+  if(state.playlists.length)loadPlaylists().catch(console.error);
 })();
