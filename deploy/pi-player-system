@@ -35,6 +35,15 @@ case "$cmd" in
     nmcli connection modify "$conn" ipv4.method manual ipv4.addresses "$address/$prefix" ipv4.gateway "$gateway" ipv4.dns "$dns"
     nmcli connection up "$conn"
     ;;
+  ntp)
+    [[ $# -eq 1 ]] || exit 2
+    server="$1"
+    [[ "$server" =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,252}$ ]] || { echo "Invalid NTP server" >&2; exit 2; }
+    install -d -m 0755 /etc/systemd/timesyncd.conf.d
+    printf '[Time]\nNTP=%s\nFallbackNTP=\n' "$server" > /etc/systemd/timesyncd.conf.d/50-pi-player.conf
+    chmod 0644 /etc/systemd/timesyncd.conf.d/50-pi-player.conf
+    systemctl restart systemd-timesyncd.service
+    ;;
   *)
     echo "Unsupported command" >&2
     exit 2
