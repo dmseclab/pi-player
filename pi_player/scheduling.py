@@ -95,6 +95,68 @@ def schedule_matches(item: dict[str, Any], now: datetime | None = None) -> bool:
     return True
 
 
+def _finite_schedule_expired(item: dict[str, Any], now: datetime | None = None) -> bool:
+    """Return True only when a schedule has a definitive final expiry.
+
+    Recurring schedules without an end date are never auto-disabled. A dated
+    schedule expires after the end date. When an end time is present, the
+    final end date remains active through that time. Overnight windows
+    (start > end) expire at the end time on the day after the configured end
+    date because the final window crosses midnight.
+    """
+    if not item.get("schedule_enabled"):
+        return False
+    end_date = _parse_date(item.get("schedule_end_date"))
+    if not end_date:
+        return False
+    now = now or datetime.now().astimezone()
+    start = _parse_time(item.get("schedule_start_time"))
+    end = _parse_time(item.get("schedule_end_time"))
+    if end:
+        final_date = end_date + timedelta(days=1) if start and start > end else end_date
+        return now.replace(tzinfo=None) > datetime.combine(final_date, end)
+    return now.date() > end_date
+
+
+def _expire_finite_schedules(conn, rows: list[dict[str, Any]], now: datetime | None = None) -> list[dict[str, Any]]:
+    """Disable expired one-shot schedules and reset them to Always.
+
+    The playlist item is retained. Only finite schedules (those with an end
+    date) are cleaned up; recurring schedules without an end date are left
+    untouched for their next eligible window.
+    """
+    now = now or datetime.now().astimezone()
+    changed = False
+    stamp = now_iso()
+    for item in rows:
+        if not _finite_schedule_expired(item, now):
+            continue
+        conn.execute(
+            """UPDATE playlist_items
+               SET enabled=0,
+                   schedule_enabled=0,
+                   schedule_start_date=NULL,
+                   schedule_end_date=NULL,
+                   schedule_weekdays=NULL,
+                   schedule_start_time=NULL,
+                   schedule_end_time=NULL,
+                   updated_at=?
+               WHERE id=?""",
+            (stamp, item["id"]),
+        )
+        item["enabled"] = 0
+        item["schedule_enabled"] = 0
+        item["schedule_start_date"] = None
+        item["schedule_end_date"] = None
+        item["schedule_weekdays"] = None
+        item["schedule_start_time"] = None
+        item["schedule_end_time"] = None
+        changed = True
+    if changed:
+        conn.commit()
+    return rows
+
+
 def _schedule_response(item: dict[str, Any]) -> dict[str, Any]:
     item["enabled"] = bool(item["enabled"])
     item["schedule_enabled"] = bool(item.get("schedule_enabled", 0))
@@ -140,8 +202,9 @@ def update_scheduled_playlist_item(playlist_id: str, item_id: str, payload: Sche
             conn.execute(f"UPDATE playlist_items SET {','.join(fields)} WHERE playlist_id=? AND id=?", values)
         audit(conn, user, "playlist.item_update", "playlist_item", item_id, payload.model_dump(exclude_unset=True, mode="json"))
         playlist = dict(conn.execute("SELECT * FROM playlists WHERE id=?", (playlist_id,)).fetchone())
-        rows = conn.execute("""SELECT playlist_items.*, assets.type AS asset_type, assets.name AS asset_name FROM playlist_items JOIN assets ON assets.id=playlist_items.asset_id WHERE playlist_items.playlist_id=? AND assets.deleted_at IS NULL ORDER BY playlist_items.position,playlist_items.created_at""", (playlist_id,)).fetchall()
-        playlist["items"] = [_schedule_response(dict(row)) for row in rows]
+        rows = rows_to_dicts(conn.execute("""SELECT playlist_items.*, assets.type AS asset_type, assets.name AS asset_name FROM playlist_items JOIN assets ON assets.id=playlist_items.asset_id WHERE playlist_items.playlist_id=? AND assets.deleted_at IS NULL ORDER BY playlist_items.position,playlist_items.created_at""", (playlist_id,)).fetchall())
+        _expire_finite_schedules(conn, rows)
+        playlist["items"] = [_schedule_response(row) for row in rows]
         return playlist
 
 
@@ -152,9 +215,10 @@ def scheduled_player_playlist() -> dict[str, Any]:
         playback = row_to_dict(conn.execute("SELECT * FROM playback_state WHERE id=1").fetchone())
         if not playlist:
             return {"state": playback["state"], "playlist": None, "items": []}
-        rows = conn.execute("""SELECT playlist_items.*,assets.type asset_type,assets.name asset_name,assets.url asset_url,assets.display_mode asset_display_mode,assets.zoom_percent asset_zoom_percent,assets.reload_seconds asset_reload_seconds,assets.mime_type asset_mime_type,assets.storage_path asset_storage_path,assets.size_bytes asset_size_bytes,assets.video_muted asset_video_muted,assets.video_loop asset_video_loop,assets.pdf_page_seconds asset_pdf_page_seconds,assets.pdf_page_count asset_pdf_page_count,assets.pdf_play_once asset_pdf_play_once FROM playlist_items JOIN assets ON assets.id=playlist_items.asset_id WHERE playlist_items.playlist_id=? AND assets.deleted_at IS NULL ORDER BY playlist_items.position,playlist_items.created_at""", (playlist["id"],)).fetchall()
+        rows = rows_to_dicts(conn.execute("""SELECT playlist_items.*,assets.type asset_type,assets.name asset_name,assets.url asset_url,assets.display_mode asset_display_mode,assets.zoom_percent asset_zoom_percent,assets.reload_seconds asset_reload_seconds,assets.mime_type asset_mime_type,assets.storage_path asset_storage_path,assets.size_bytes asset_size_bytes,assets.video_muted asset_video_muted,assets.video_loop asset_video_loop,assets.pdf_page_seconds asset_pdf_page_seconds,assets.pdf_page_count asset_pdf_page_count,assets.pdf_play_once asset_pdf_play_once FROM playlist_items JOIN assets ON assets.id=playlist_items.asset_id WHERE playlist_items.playlist_id=? AND assets.deleted_at IS NULL ORDER BY playlist_items.position,playlist_items.created_at""", (playlist["id"],)).fetchall())
+        _expire_finite_schedules(conn, rows)
         items = []
-        for row in rows_to_dicts(rows):
+        for row in rows:
             item = _schedule_response(row)
             if not item["schedule_active_now"]:
                 continue
