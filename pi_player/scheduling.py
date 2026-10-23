@@ -36,10 +36,7 @@ class ScheduledPlaylistItemUpdate(BaseModel):
 
 def _remove(path: str, method: str) -> None:
     method = method.upper()
-    app.router.routes[:] = [
-        route for route in app.router.routes
-        if not (getattr(route, "path", None) == path and method in (getattr(route, "methods", None) or set()))
-    ]
+    app.router.routes[:] = [route for route in app.router.routes if not (getattr(route, "path", None) == path and method in (getattr(route, "methods", None) or set()))]
 
 
 def _migrate() -> None:
@@ -60,9 +57,11 @@ def _parse_time(value: str | None) -> time | None:
     return time.fromisoformat(value) if value else None
 
 
-def _weekdays(value: str | None) -> set[int]:
-    if not value:
+def _weekdays(value: str | list[int] | None) -> set[int]:
+    if value is None or value == "":
         return set(range(7))
+    if isinstance(value, list):
+        return set(value)
     return {int(part) for part in value.split(",") if part != ""}
 
 
@@ -78,12 +77,10 @@ def schedule_matches(item: dict[str, Any], now: datetime | None = None) -> bool:
         return False
     if end_date and today > end_date:
         return False
-
     allowed = _weekdays(item.get("schedule_weekdays"))
     start = _parse_time(item.get("schedule_start_time"))
     end = _parse_time(item.get("schedule_end_time"))
     if start and end and start > end:
-        # Overnight window: after midnight belongs to the previous day's schedule.
         if current >= start:
             return now.weekday() in allowed
         if current <= end:
@@ -101,9 +98,9 @@ def schedule_matches(item: dict[str, Any], now: datetime | None = None) -> bool:
 def _schedule_response(item: dict[str, Any]) -> dict[str, Any]:
     item["enabled"] = bool(item["enabled"])
     item["schedule_enabled"] = bool(item.get("schedule_enabled", 0))
-    raw = item.get("schedule_weekdays")
-    item["schedule_weekdays"] = sorted(_weekdays(raw)) if raw else list(range(7))
     item["schedule_active_now"] = bool(item["enabled"] and schedule_matches(item))
+    raw = item.get("schedule_weekdays")
+    item["schedule_weekdays"] = sorted(_weekdays(raw))
     return item
 
 
@@ -113,12 +110,7 @@ _remove("/api/player/playlist", "GET")
 
 
 @app.put("/api/playlists/{playlist_id}/items/{item_id}")
-def update_scheduled_playlist_item(
-    playlist_id: str,
-    item_id: str,
-    payload: ScheduledPlaylistItemUpdate,
-    user: Annotated[str, Depends(require_user)],
-) -> dict[str, Any]:
+def update_scheduled_playlist_item(playlist_id: str, item_id: str, payload: ScheduledPlaylistItemUpdate, user: Annotated[str, Depends(require_user)]) -> dict[str, Any]:
     if payload.schedule_start_date and payload.schedule_end_date and payload.schedule_start_date > payload.schedule_end_date:
         raise HTTPException(status_code=400, detail="Schedule start date must be on or before end date")
     with db() as conn:
@@ -148,10 +140,7 @@ def update_scheduled_playlist_item(
             conn.execute(f"UPDATE playlist_items SET {','.join(fields)} WHERE playlist_id=? AND id=?", values)
         audit(conn, user, "playlist.item_update", "playlist_item", item_id, payload.model_dump(exclude_unset=True, mode="json"))
         playlist = dict(conn.execute("SELECT * FROM playlists WHERE id=?", (playlist_id,)).fetchone())
-        rows = conn.execute("""SELECT playlist_items.*, assets.type AS asset_type, assets.name AS asset_name
-                             FROM playlist_items JOIN assets ON assets.id=playlist_items.asset_id
-                             WHERE playlist_items.playlist_id=? AND assets.deleted_at IS NULL
-                             ORDER BY playlist_items.position,playlist_items.created_at""", (playlist_id,)).fetchall()
+        rows = conn.execute("""SELECT playlist_items.*, assets.type AS asset_type, assets.name AS asset_name FROM playlist_items JOIN assets ON assets.id=playlist_items.asset_id WHERE playlist_items.playlist_id=? AND assets.deleted_at IS NULL ORDER BY playlist_items.position,playlist_items.created_at""", (playlist_id,)).fetchall()
         playlist["items"] = [_schedule_response(dict(row)) for row in rows]
         return playlist
 
@@ -163,17 +152,7 @@ def scheduled_player_playlist() -> dict[str, Any]:
         playback = row_to_dict(conn.execute("SELECT * FROM playback_state WHERE id=1").fetchone())
         if not playlist:
             return {"state": playback["state"], "playlist": None, "items": []}
-        rows = conn.execute("""SELECT playlist_items.*,
-                    assets.type asset_type,assets.name asset_name,assets.url asset_url,
-                    assets.display_mode asset_display_mode,assets.zoom_percent asset_zoom_percent,
-                    assets.reload_seconds asset_reload_seconds,assets.mime_type asset_mime_type,
-                    assets.storage_path asset_storage_path,assets.size_bytes asset_size_bytes,
-                    assets.video_muted asset_video_muted,assets.video_loop asset_video_loop,
-                    assets.pdf_page_seconds asset_pdf_page_seconds,assets.pdf_page_count asset_pdf_page_count,
-                    assets.pdf_play_once asset_pdf_play_once
-                FROM playlist_items JOIN assets ON assets.id=playlist_items.asset_id
-                WHERE playlist_items.playlist_id=? AND assets.deleted_at IS NULL
-                ORDER BY playlist_items.position,playlist_items.created_at""", (playlist["id"],)).fetchall()
+        rows = conn.execute("""SELECT playlist_items.*,assets.type asset_type,assets.name asset_name,assets.url asset_url,assets.display_mode asset_display_mode,assets.zoom_percent asset_zoom_percent,assets.reload_seconds asset_reload_seconds,assets.mime_type asset_mime_type,assets.storage_path asset_storage_path,assets.size_bytes asset_size_bytes,assets.video_muted asset_video_muted,assets.video_loop asset_video_loop,assets.pdf_page_seconds asset_pdf_page_seconds,assets.pdf_page_count asset_pdf_page_count,assets.pdf_play_once asset_pdf_play_once FROM playlist_items JOIN assets ON assets.id=playlist_items.asset_id WHERE playlist_items.playlist_id=? AND assets.deleted_at IS NULL ORDER BY playlist_items.position,playlist_items.created_at""", (playlist["id"],)).fetchall()
         items = []
         for row in rows_to_dicts(rows):
             item = _schedule_response(row)
