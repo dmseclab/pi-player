@@ -1,13 +1,23 @@
 // NTP configuration/status for the Settings page.
 (() => {
   const nameInput=document.querySelector('#setting-player-name');
+  const uploadInput=document.querySelector('#setting-max-upload');
   const form=document.querySelector('#settings-form');
   if(!nameInput||!form)return;
 
   const row=document.createElement('div');
   row.className='form-row';
-  row.innerHTML='<label for="setting-ntp-server">NTP Server</label><input id="setting-ntp-server" placeholder="e.g. 172.18.5.20" required><small id="setting-ntp-status" class="muted">Checking time synchronization…</small>';
-  nameInput.closest('.form-row').insertAdjacentElement('afterend',row);
+  row.innerHTML='<label for="setting-ntp-server">NTP Server</label><input id="setting-ntp-server" placeholder="NTP hostname or IP address" required><small id="setting-ntp-status" class="muted">Checking time synchronization…</small>';
+
+  // Keep the NTP control in the right-hand Settings column, directly below
+  // Player name and aligned with the Max upload MB row on the left.
+  const uploadRow=uploadInput?.closest('.form-row');
+  const nameRow=nameInput.closest('.form-row');
+  if(uploadRow && uploadRow.parentElement===nameRow.parentElement){
+    uploadRow.insertAdjacentElement('afterend',row);
+  }else{
+    nameRow.insertAdjacentElement('afterend',row);
+  }
 
   const input=row.querySelector('#setting-ntp-server');
   const status=row.querySelector('#setting-ntp-status');
