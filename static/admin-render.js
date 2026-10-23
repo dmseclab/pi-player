@@ -36,3 +36,10 @@ function initializeAdminControls() {
   document.querySelector('#playlist-form button[type="submit"]').insertAdjacentHTML('afterend','<button type="button" id="import-playlist">Import Playlist</button><input id="playlist-package-file" type="file" accept=".zip" hidden>');
 }
 async function refreshAssetsAndPlaylists(){await loadAssets();await Promise.all([loadPlaylists(),loadStatus()]);}
+
+// Optional feature modules are loaded after admin.js so they can extend the existing UI.
+window.addEventListener('load',()=>{
+  for(const src of ['/static/schedule-ui.js?v=dev-schedule-2','/static/ntp-ui.js?v=dev-ntp-1']){
+    const script=document.createElement('script');script.src=src;document.body.appendChild(script);
+  }
+});

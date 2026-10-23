@@ -7,7 +7,9 @@ from .extended_app import app
 from . import playlist_backup as _playlist_backup  # noqa: F401
 from . import website_options as _website_options  # noqa: F401
 from . import video_support as _video_support  # noqa: F401
+from . import scheduling as _scheduling  # noqa: F401
 from . import appliance as _appliance  # noqa: F401
+from . import ntp_support as _ntp_support  # noqa: F401
 from . import playback_monitor as _playback_monitor  # noqa: F401
 from . import player_info as _player_info  # noqa: F401
 from . import branding as _branding  # noqa: F401
