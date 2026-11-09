@@ -4,7 +4,7 @@
 Called once per minute by pi-player-watchdog.sh as root. Stdlib only.
 Writes diagnostic samples to the system journal via stdout and persistent state
 under /var/lib/pi-player; does not directly terminate processes.
-Exit 10: request one rate-limited kiosk restart. All other exits: observe only.
+Exit 10: advise that sustained resource pressure warrants recovery.\nOnly the shared recovery gate may authorize and record restart attempts.
 """
 import json
 import os
@@ -15,8 +15,6 @@ STATE = Path("/var/lib/pi-player/gpu-watchdog-state.json")
 BOOT_ID = Path("/proc/sys/kernel/random/boot_id")
 THRESHOLD = 1000
 CONSECUTIVE = 3
-COOLDOWN_SECONDS = 6 * 3600
-MAX_DAILY_RESTARTS = 2
 
 
 def gpu_samples(proc=Path("/proc")):
@@ -62,17 +60,20 @@ def blocked_tasks(proc=Path("/proc")):
 
 
 def next_state(prior, samples, blocked, now, boot):
+    """Track only the number of high samples, never recovery attempts.
+
+    The shared recovery gate owns authorization, cooldowns, and history.
+    Keeping a saturated counter allows an authorized restart after the
+    shared cooldown, even if an earlier request was denied.
+    """
     if prior.get("boot_id") != boot:
-        prior = {"boot_id": boot, "high_samples": 0, "recoveries": []}
-    history = [t for t in prior.get("recoveries", []) if now - t < 86400 and t <= now]
+        prior = {"boot_id": boot, "high_samples": 0}
+    count = prior.get("high_samples", 0)
+    if type(count) is not int or count < 0:
+        raise ValueError("invalid GPU sample state")
     high = bool(samples) and any(s["chromium_shm"] >= THRESHOLD for s in samples)
-    high_samples = prior.get("high_samples", 0) + 1 if high else 0
-    last = history[-1] if history else 0
-    ready = high_samples >= CONSECUTIVE and not blocked and len(history) < MAX_DAILY_RESTARTS and now - last >= COOLDOWN_SECONDS
-    if ready:
-        history.append(now)
-        high_samples = 0
-    return {"boot_id": boot, "high_samples": high_samples, "recoveries": history}, ready
+    count = min(CONSECUTIVE, count + 1) if high else 0
+    return {"boot_id": boot, "high_samples": count}, bool(count >= CONSECUTIVE and not blocked)
 
 
 def main():
@@ -82,8 +83,14 @@ def main():
     blocked = blocked_tasks()
     try:
         previous = json.loads(STATE.read_text())
-    except (OSError, ValueError):
+    except FileNotFoundError:
         previous = {}
+    except (OSError, ValueError) as error:
+        print(f"gpu watchdog: state read error: {error}", flush=True)
+        return 1
+    if not isinstance(previous, dict):
+        print("gpu watchdog: invalid state structure", flush=True)
+        return 1
     updated, recover = next_state(previous, samples, blocked, now, boot)
     STATE.parent.mkdir(parents=True, exist_ok=True)
     tmp = STATE.with_suffix(".tmp")
