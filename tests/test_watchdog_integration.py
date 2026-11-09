@@ -80,7 +80,7 @@ class WatchdogIntegration(unittest.TestCase):
 
     def test_stalled_heartbeat_authorized(self):
         actions, _ = self.exercise(stalled=True)
-        self.assertEqual(actions, ["restart getty@tty1.service"])
+        self.assertEqual(actions, ["--no-block restart getty@tty1.service"])
 
     def test_stalled_heartbeat_denied(self):
         actions, _ = self.exercise(stalled=True, gate_allow=False)
@@ -88,7 +88,7 @@ class WatchdogIntegration(unittest.TestCase):
 
     def test_gpu_threshold_authorized(self):
         actions, _ = self.exercise(gpu_exit=10)
-        self.assertEqual(actions, ["restart getty@tty1.service"])
+        self.assertEqual(actions, ["--no-block restart getty@tty1.service"])
 
     def test_gpu_threshold_denied(self):
         actions, _ = self.exercise(gpu_exit=10, gate_allow=False)
