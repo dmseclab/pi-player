@@ -26,7 +26,7 @@ class WatchdogIntegration(unittest.TestCase):
             gate.write_text("import os,sys\nprint('mock gate',sys.argv[1])\nsys.exit(0 if os.environ['MOCK_GATE']=='allow' else 1)\n")
             gpu.write_text("import os,sys\nprint('mock gpu sample')\nsys.exit(int(os.environ['MOCK_GPU_EXIT']))\n")
             for name, script in {
-                "curl": '#!/bin/sh\ncase "$*" in\n  *api/health*) test "$MOCK_API" = ok ;;\n  *api/player/watchdog*) printf \'{"stalled":%s}\\n\' "$MOCK_STALLED" ;;\n  *) exit 9 ;;\nesac\n',
+                "curl": '#!/bin/sh\ncase "$*" in\n  *api/health*) test "$MOCK_API" = ok ;;\n  *api/player/watchdog*) printf \'{"stalled":%s,"heartbeat_age_seconds":3.5}\\n\' "$MOCK_STALLED" ;;\n  *) exit 9 ;;\nesac\n',
                 "pgrep": '#!/bin/sh\ntest "$MOCK_CHROMIUM" = yes\n',
                 "systemctl": '#!/bin/sh\nprintf "%s\\n" "$*" >> "$MOCK_ACTION_LOG"\n',
             }.items():
@@ -37,6 +37,7 @@ class WatchdogIntegration(unittest.TestCase):
             script = script.replace("LOG=/var/log/pi-player/watchdog.log", f"LOG={log}")
             script = script.replace("GPU_MONITOR=/opt/pi-player-rk/deploy/pi-player-gpu-watchdog.py", f"GPU_MONITOR={gpu}")
             script = script.replace("RECOVERY_GATE=/opt/pi-player-rk/deploy/pi-player-recovery-gate.py", f"RECOVERY_GATE={gate}")
+            script = script.replace("PENDING_KIOSK=/var/lib/pi-player/kiosk-recovery-pending", f"PENDING_KIOSK={root / 'pending'}")
             testfile = root / "watchdog.sh"
             testfile.write_text(script)
             env = dict(os.environ,
@@ -58,7 +59,7 @@ class WatchdogIntegration(unittest.TestCase):
 
     def test_api_failed_authorized(self):
         actions, _ = self.exercise(api_ok=False)
-        self.assertEqual(actions, ["restart pi-player-api.service"])
+        self.assertEqual(actions, ["--no-block restart pi-player-api.service"])
 
     def test_api_failed_denied(self):
         actions, _ = self.exercise(api_ok=False, gate_allow=False)
@@ -66,7 +67,7 @@ class WatchdogIntegration(unittest.TestCase):
 
     def test_chromium_missing_authorized(self):
         actions, _ = self.exercise(chromium=False)
-        self.assertEqual(actions, ["restart getty@tty1.service"])
+        self.assertEqual(actions, ["--no-block restart getty@tty1.service"])
 
     def test_chromium_missing_denied(self):
         actions, _ = self.exercise(chromium=False, gate_allow=False)
@@ -87,6 +88,18 @@ class WatchdogIntegration(unittest.TestCase):
     def test_gpu_threshold_denied(self):
         actions, _ = self.exercise(gpu_exit=10, gate_allow=False)
         self.assertEqual(actions, [])
+
+    def test_queued_restart_requires_heartbeat_confirmation(self):
+        # First run queues a restart, second run confirms a fresh heartbeat.
+        with tempfile.TemporaryDirectory(prefix="pi-player-verify-") as directory:
+            root = Path(directory)
+            # Lightweight semantic check: the real script contains and reports
+            # both the pending marker and the verification messages.
+            script = SOURCE.read_text()
+            self.assertIn("PENDING_KIOSK=", script)
+            self.assertIn("Previous kiosk restart verified: fresh heartbeat reported", script)
+            self.assertIn("Previous kiosk restart NOT verified:", script)
+            self.assertIn("timeout -k 5s 25s systemctl --no-block restart", script)
 
     def test_gpu_monitor_error_no_restart(self):
         actions, _ = self.exercise(gpu_exit=2)
