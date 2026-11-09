@@ -22,7 +22,7 @@ class SchedulingUIIntegrationTests(unittest.TestCase):
         self.assertIn("schedule_enabled:false", source)
         self.assertIn("schedule_start_date:null", source)
         self.assertIn("schedule_end_time:null", source)
-        self.assertNotIn("enabled:false,schedule_mode", source)
+        self.assertNotRegex(source, r"(?<!schedule_)enabled\\s*:\\s*false")
 
     def test_required_fields_change_by_choice(self):
         source = (ROOT / "static" / "schedule-ui.js").read_text()
