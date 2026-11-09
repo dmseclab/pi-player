@@ -19,7 +19,24 @@ POLICIES = {
 }
 
 
+def validate_state(state):
+    """Reject malformed persistent history instead of resetting recovery limits."""
+    if not isinstance(state, dict):
+        raise ValueError("state must be an object")
+    if set(state) - {"history"}:
+        raise ValueError("unknown recovery state fields")
+    history = state.get("history", {})
+    if not isinstance(history, dict):
+        raise ValueError("history must be an object")
+    for kind, timestamps in history.items():
+        if kind not in POLICIES or not isinstance(timestamps, list):
+            raise ValueError("invalid recovery history entry")
+        if any(type(t) is not int or t < 0 for t in timestamps):
+            raise ValueError("invalid recovery timestamp")
+
+
 def allowed(state, kind, now, blocked):
+    validate_state(state)
     if kind not in POLICIES:
         return False, state, "unknown recovery kind"
     history = state.get("history", {})
@@ -66,7 +83,12 @@ def main(kind):
         print(f"recovery gate: state read error: {error}", flush=True)
         return 1  # never reset lost/corrupt state and accidentally permit storm
 
-    authorize, updated, message = allowed(prior, kind, now, blocked_tasks())
+    try:
+        validate_state(prior)
+        authorize, updated, message = allowed(prior, kind, now, blocked_tasks())
+    except (ValueError, TypeError, OSError) as error:
+        print(f"recovery gate: validation or kernel inspection error: {error}", flush=True)
+        return 1
     if authorize:
         try:
             STATE.parent.mkdir(parents=True, exist_ok=True)
