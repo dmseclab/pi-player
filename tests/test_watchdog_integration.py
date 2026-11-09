@@ -51,6 +51,7 @@ class WatchdogIntegration(unittest.TestCase):
             result = subprocess.run(["bash", str(testfile)], env=env, capture_output=True, text=True, timeout=10)
             if followup is not None:
                 env["MOCK_STALLED"] = "true" if followup else "false"
+                env["MOCK_GATE"] = "deny"  # simulate the shared restart cooldown
                 follow = subprocess.run(["bash", str(testfile)], env=env, capture_output=True, text=True, timeout=10)
                 self.assertEqual(follow.returncode, 0, follow.stdout + follow.stderr)
                 self.assertFalse((root / "pending").exists(), "pending verification marker must be consumed")
