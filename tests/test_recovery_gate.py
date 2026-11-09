@@ -1,6 +1,9 @@
 """Shared watchdog recovery gate; no pytest dependency."""
 import importlib.util
 import unittest
+import tempfile
+import json
+from unittest.mock import patch
 from pathlib import Path
 
 path = Path(__file__).resolve().parents[1] / "deploy" / "pi-player-recovery-gate.py"
@@ -39,6 +42,40 @@ class RecoveryGateTests(unittest.TestCase):
         state = {"history": {"kiosk": [100000, 101200, 102400]}}
         ok, _, _ = module.allowed(state, "kiosk", 100000 + 86401, False)
         self.assertTrue(ok)
+
+    def test_malformed_histories_rejected(self):
+        for invalid in (
+            [], {"history": []}, {"history": {"kiosk": "100000"}},
+            {"history": {"kiosk": [True]}}, {"history": {"kiosk": ["100000"]}},
+            {"history": {"unknown": [100000]}}, {"history": {"kiosk": [-1]}}
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    module.allowed(invalid, "kiosk", 100100, False)
+
+    def test_corrupt_existing_state_denied_without_overwrite(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            state_path = Path(tempdir) / "gate.json"
+            state_path.write_text('{"history": {"kiosk": "broken"}}')
+            original = state_path.read_bytes()
+            with patch.object(module, "STATE", state_path), patch.object(module, "blocked_tasks", return_value=False):
+                self.assertEqual(module.main("kiosk"), 1)
+            self.assertEqual(state_path.read_bytes(), original)
+
+    def test_unreadable_state_denied(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            state_path = Path(tempdir) / "gate.json"
+            state_path.mkdir()
+            with patch.object(module, "STATE", state_path), patch.object(module, "blocked_tasks", return_value=False):
+                self.assertEqual(module.main("kiosk"), 1)
+
+    def test_valid_state_persisted(self):
+        with tempfile.TemporaryDirectory() as tempdir:
+            state_path = Path(tempdir) / "gate.json"
+            with patch.object(module, "STATE", state_path), patch.object(module, "blocked_tasks", return_value=False):
+                self.assertEqual(module.main("kiosk"), 0)
+            recorded = json.loads(state_path.read_text())
+            self.assertEqual(len(recorded["history"]["kiosk"]), 1)
 
     def test_invalid_kind_denied(self):
         ok, _, _ = module.allowed({}, "reboot", 100000, False)
