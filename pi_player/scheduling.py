@@ -17,6 +17,7 @@ class ScheduledPlaylistItemUpdate(BaseModel):
     duration_seconds: int | None = Field(default=None, ge=1, le=86400)
     enabled: bool | None = None
     schedule_enabled: bool | None = None
+    schedule_mode: str | None = Field(default=None, pattern="^(recurring|window)$")
     schedule_start_date: date | None = None
     schedule_end_date: date | None = None
     schedule_weekdays: list[int] | None = None
@@ -42,6 +43,7 @@ def _remove(path: str, method: str) -> None:
 def _migrate() -> None:
     with db() as conn:
         ensure_column(conn, "playlist_items", "schedule_enabled", "INTEGER NOT NULL DEFAULT 0")
+        ensure_column(conn, "playlist_items", "schedule_mode", "TEXT NOT NULL DEFAULT 'recurring'")
         ensure_column(conn, "playlist_items", "schedule_start_date", "TEXT")
         ensure_column(conn, "playlist_items", "schedule_end_date", "TEXT")
         ensure_column(conn, "playlist_items", "schedule_weekdays", "TEXT")
@@ -71,6 +73,15 @@ def schedule_matches(item: dict[str, Any], now: datetime | None = None) -> bool:
     now = now or datetime.now().astimezone()
     today = now.date()
     current = now.timetz().replace(tzinfo=None)
+    if item.get('schedule_mode') == 'window':
+        start_date = _parse_date(item.get('schedule_start_date'))
+        end_date = _parse_date(item.get('schedule_end_date'))
+        start_time = _parse_time(item.get('schedule_start_time'))
+        end_time = _parse_time(item.get('schedule_end_time'))
+        if not all((start_date, end_date, start_time is not None, end_time is not None)):
+            return False
+        moment = now.replace(tzinfo=None)
+        return datetime.combine(start_date, start_time) <= moment < datetime.combine(end_date, end_time)
     start_date = _parse_date(item.get("schedule_start_date"))
     end_date = _parse_date(item.get("schedule_end_date"))
     if start_date and today < start_date:
@@ -110,6 +121,9 @@ def _finite_schedule_expired(item: dict[str, Any], now: datetime | None = None) 
     if not end_date:
         return False
     now = now or datetime.now().astimezone()
+    if item.get('schedule_mode') == 'window':
+        end = _parse_time(item.get('schedule_end_time'))
+        return end is not None and now.replace(tzinfo=None) >= datetime.combine(end_date, end)
     start = _parse_time(item.get("schedule_start_time"))
     end = _parse_time(item.get("schedule_end_time"))
     if end:
@@ -135,6 +149,7 @@ def _expire_finite_schedules(conn, rows: list[dict[str, Any]], now: datetime | N
             """UPDATE playlist_items
                SET enabled=0,
                    schedule_enabled=0,
+                   schedule_mode='recurring',
                    schedule_start_date=NULL,
                    schedule_end_date=NULL,
                    schedule_weekdays=NULL,
@@ -146,6 +161,7 @@ def _expire_finite_schedules(conn, rows: list[dict[str, Any]], now: datetime | N
         )
         item["enabled"] = 0
         item["schedule_enabled"] = 0
+        item["schedule_mode"] = "recurring"
         item["schedule_start_date"] = None
         item["schedule_end_date"] = None
         item["schedule_weekdays"] = None
@@ -160,6 +176,7 @@ def _expire_finite_schedules(conn, rows: list[dict[str, Any]], now: datetime | N
 def _schedule_response(item: dict[str, Any]) -> dict[str, Any]:
     item["enabled"] = bool(item["enabled"])
     item["schedule_enabled"] = bool(item.get("schedule_enabled", 0))
+    item["schedule_mode"] = item.get("schedule_mode") or "recurring"
     item["schedule_active_now"] = bool(item["enabled"] and schedule_matches(item))
     raw = item.get("schedule_weekdays")
     item["schedule_weekdays"] = sorted(_weekdays(raw))
@@ -177,6 +194,16 @@ def update_scheduled_playlist_item(playlist_id: str, item_id: str, payload: Sche
         raise HTTPException(status_code=400, detail="Schedule start date must be on or before end date")
     with db() as conn:
         _ensure_playlist_item(conn, playlist_id, item_id)
+        existing = dict(conn.execute("SELECT * FROM playlist_items WHERE playlist_id=? AND id=?", (playlist_id, item_id)).fetchone())
+        effective = {**existing, **payload.model_dump(exclude_unset=True, mode="json")}
+        if effective.get("schedule_enabled") and effective.get("schedule_mode", "recurring") == "window":
+            try:
+                start = datetime.combine(date.fromisoformat(effective["schedule_start_date"]), time.fromisoformat(effective["schedule_start_time"]))
+                end = datetime.combine(date.fromisoformat(effective["schedule_end_date"]), time.fromisoformat(effective["schedule_end_time"]))
+            except (TypeError, ValueError, KeyError):
+                raise HTTPException(status_code=400, detail="Date & time window requires both dates and times")
+            if start >= end:
+                raise HTTPException(status_code=400, detail="End date/time must be later than start date/time")
         fields: list[str] = []
         values: list[Any] = []
         mapping = {
@@ -184,6 +211,7 @@ def update_scheduled_playlist_item(playlist_id: str, item_id: str, payload: Sche
             "duration_seconds": payload.duration_seconds,
             "enabled": int(payload.enabled) if payload.enabled is not None else None,
             "schedule_enabled": int(payload.schedule_enabled) if payload.schedule_enabled is not None else None,
+            "schedule_mode": payload.schedule_mode,
             "schedule_start_date": payload.schedule_start_date.isoformat() if payload.schedule_start_date else None,
             "schedule_end_date": payload.schedule_end_date.isoformat() if payload.schedule_end_date else None,
             "schedule_weekdays": ",".join(str(day) for day in payload.schedule_weekdays) if payload.schedule_weekdays is not None else None,
