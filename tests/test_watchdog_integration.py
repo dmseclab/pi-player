@@ -14,7 +14,7 @@ SOURCE = ROOT / "deploy/pi-player-watchdog.sh"
 
 
 class WatchdogIntegration(unittest.TestCase):
-    def exercise(self, *, api_ok=True, chromium=True, stalled=False, gpu_exit=0, gate_allow=True):
+    def exercise(self, *, api_ok=True, chromium=True, stalled=False, gpu_exit=0, gate_allow=True, followup=None):
         with tempfile.TemporaryDirectory(prefix="pi-player-watchdog-test-") as directory:
             root = Path(directory)
             fakebin = root / "bin"
@@ -49,9 +49,14 @@ class WatchdogIntegration(unittest.TestCase):
                        MOCK_GATE="allow" if gate_allow else "deny",
                        MOCK_ACTION_LOG=str(journal))
             result = subprocess.run(["bash", str(testfile)], env=env, capture_output=True, text=True, timeout=10)
+            if followup is not None:
+                env["MOCK_STALLED"] = "true" if followup else "false"
+                follow = subprocess.run(["bash", str(testfile)], env=env, capture_output=True, text=True, timeout=10)
+                self.assertEqual(follow.returncode, 0, follow.stdout + follow.stderr)
+                self.assertFalse((root / "pending").exists(), "pending verification marker must be consumed")
             actions = journal.read_text().splitlines() if journal.exists() else []
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            return actions, result.stdout
+            return actions, log.read_text() if log.exists() else result.stdout
 
     def test_healthy_no_restart(self):
         actions, _ = self.exercise()
@@ -89,17 +94,15 @@ class WatchdogIntegration(unittest.TestCase):
         actions, _ = self.exercise(gpu_exit=10, gate_allow=False)
         self.assertEqual(actions, [])
 
-    def test_queued_restart_requires_heartbeat_confirmation(self):
-        # First run queues a restart, second run confirms a fresh heartbeat.
-        with tempfile.TemporaryDirectory(prefix="pi-player-verify-") as directory:
-            root = Path(directory)
-            # Lightweight semantic check: the real script contains and reports
-            # both the pending marker and the verification messages.
-            script = SOURCE.read_text()
-            self.assertIn("PENDING_KIOSK=", script)
-            self.assertIn("Previous kiosk restart verified: fresh heartbeat reported", script)
-            self.assertIn("Previous kiosk restart NOT verified:", script)
-            self.assertIn("timeout -k 5s 25s systemctl --no-block restart", script)
+    def test_restart_verified_on_next_healthy_heartbeat(self):
+        actions, logs = self.exercise(stalled=True, followup=False)
+        self.assertEqual(actions, ["--no-block restart getty@tty1.service"])
+        self.assertIn("Previous kiosk restart verified: fresh heartbeat reported", logs)
+
+    def test_restart_unverified_on_next_stale_heartbeat(self):
+        actions, logs = self.exercise(stalled=True, followup=True)
+        self.assertEqual(actions, ["--no-block restart getty@tty1.service"])
+        self.assertIn("Previous kiosk restart NOT verified:", logs)
 
     def test_gpu_monitor_error_no_restart(self):
         actions, _ = self.exercise(gpu_exit=2)
