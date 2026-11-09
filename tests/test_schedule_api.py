@@ -31,7 +31,7 @@ class SchedulingDatabaseTests(unittest.TestCase):
                 CREATE TABLE playlist_items (
                     id TEXT PRIMARY KEY, playlist_id TEXT, asset_id TEXT,
                     position INTEGER, duration_seconds INTEGER, enabled INTEGER,
-                    updated_at TEXT,
+                    created_at TEXT, updated_at TEXT,
                     schedule_enabled INTEGER DEFAULT 0,
                     schedule_mode TEXT DEFAULT 'recurring',
                     schedule_start_date TEXT,
@@ -44,11 +44,11 @@ class SchedulingDatabaseTests(unittest.TestCase):
                 INSERT INTO assets VALUES ('asset1','Asset 1','image',NULL);
                 INSERT INTO assets VALUES ('asset2','Asset 2','image',NULL);
                 INSERT INTO playlist_items
-                    (id,playlist_id,asset_id,position,duration_seconds,enabled,updated_at)
-                    VALUES ('item1','p1','asset1',0,15,1,'initial');
+                    (id,playlist_id,asset_id,position,duration_seconds,enabled,created_at,updated_at)
+                    VALUES ('item1','p1','asset1',0,15,1,'initial','initial');
                 INSERT INTO playlist_items
-                    (id,playlist_id,asset_id,position,duration_seconds,enabled,updated_at)
-                    VALUES ('item2','p1','asset2',1,15,1,'initial');
+                    (id,playlist_id,asset_id,position,duration_seconds,enabled,created_at,updated_at)
+                    VALUES ('item2','p1','asset2',1,15,1,'initial','initial');
             """)
 
     @contextlib.contextmanager
