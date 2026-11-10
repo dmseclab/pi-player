@@ -45,8 +45,11 @@ sudo apt-get install -y git ca-certificates curl
 git clone --branch main --single-branch https://github.com/dmseclab/pi-player.git
 cd pi-player
 git status --short --branch
+# Bootstrap uses this checked-out Git branch by default.
 sudo -E env PI_PLAYER_APPLIANCE=1 PI_PLAYER_USER="$USER" bash bootstrap-install.sh
 ```
+
+**Branch selection:** Bootstrap installs the Git branch checked out in the directory containing `bootstrap-install.sh`. To choose a branch explicitly, set `PI_PLAYER_BRANCH=<branch>`. It prints the selected source branch. Verify that branch before installation; old bootstrap scripts defaulted to `main`, even when launched from a different checked-out branch.
 
 The installer preserves the OS hostname and provisions `pi-player` as the internal kiosk user; the initial SSH/bootstrap user remains separate. Installation copies application code to `/opt/pi-player-rk`, persistent data to `/var/lib/pi-player`, and service logs to `/var/log/pi-player`.
 
