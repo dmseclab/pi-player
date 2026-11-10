@@ -5,6 +5,10 @@ cmd="${1:-}"
 shift || true
 
 case "$cmd" in
+  reboot)
+    [[ $# -eq 0 ]] || exit 2
+    systemctl --no-block reboot
+    ;;
   restart-kiosk)
     [[ $# -eq 0 ]] || exit 2
     systemctl --no-block restart getty@tty1.service
