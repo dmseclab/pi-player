@@ -7,6 +7,7 @@ const message = (text, error=false) => { $("#setup-message").innerHTML = `<div c
     const s = await r.json();
     if (!s.setup_required) window.location.replace("/");
     if (s.hostname) $("#hostname").value = s.hostname === "localhost" ? "pi-player" : s.hostname;
+    if (s.ntp_server) $("#ntp-server").value = s.ntp_server;
   } catch (_) { message("Unable to read player setup status.", true); }
 })();
 
@@ -29,7 +30,8 @@ $("#setup-form").addEventListener("submit", async (event) => {
     create_support_user: supportToggle.checked,
     support_username: supportToggle.checked ? $("#support-username").value.trim() : null,
     support_password: supportToggle.checked ? $("#support-password").value : null,
-    hostname: $("#hostname").value.trim()
+    hostname: $("#hostname").value.trim(),
+    ntp_server: $("#ntp-server").value.trim() || null
   };
   try {
     const r = await fetch("/api/setup/complete", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
