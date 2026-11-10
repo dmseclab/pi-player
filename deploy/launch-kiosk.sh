@@ -45,8 +45,8 @@ for entry in SingletonLock SingletonSocket SingletonCookie; do
   fi
 done
 
-exec "$BROWSER" \\
-  --user-data-dir="$PROFILE_DIR" \\
+exec "$BROWSER" \
+  --user-data-dir="$PROFILE_DIR" \
   --kiosk \
   --noerrdialogs \
   --disable-infobars \
