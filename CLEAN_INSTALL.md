@@ -57,7 +57,7 @@ The installer preserves the OS hostname and provisions `pi-player` as the intern
 1. Check local health: `curl --noproxy '*' -fsS http://127.0.0.1:8000/api/health`.
 2. In a browser on the staging LAN, open `http://<pi-ip>:8000/`. The First-Time Setup wizard should appear.
 3. Temporary bootstrap web credentials are `pi` / `pi`. **Use them only on the isolated staging LAN, immediately complete setup, and never leave the appliance exposed in this state.**
-4. Configure a unique web admin, a distinct SSH/support user, strong unique passwords and final hostname. Confirm old bootstrap web credentials no longer work.
+4. Configure a unique permanent web administrator and final hostname. The temporary `pi` / `pi` web credentials authorize this one-time activation only; they are replaced afterward. If Raspberry Pi Imager already configured SSH, leave **Create an additional SSH support account** unchecked to preserve the existing SSH user and keys. Otherwise check it and supply a new, distinct SSH support account. Confirm old bootstrap web credentials no longer work.
 5. Reconfirm NTP/time zone and then configure branding, content, playback and (if required) static network parameters.
 6. Reboot once and verify automatic kiosk launch on HDMI, as well as web administration from another workstation.
 
@@ -67,7 +67,7 @@ The installer preserves the OS hostname and provisions `pi-player` as the intern
 - [ ] `pi-player-api.service`, `pi-player-health.timer`, and `pi-player-watchdog.timer` active
 - [ ] `/api/health` returns `ok: true`, with zero missing/orphan/size-mismatched assets
 - [ ] Database is new and empty before test uploads; unique `/etc/pi-player/environment` secret exists with `0600` permissions
-- [ ] Admin and SSH/support credentials unique; temporary bootstrap web login rejected after setup
+- [ ] Permanent web admin credentials unique; temporary bootstrap web login rejected after setup; existing SSH credentials preserved when optional SSH creation is unchecked
 - [ ] Local timezone and NTP synchronized; scheduled assets use local dates/times
 - [ ] Image / PDF / video / website content upload, playback and removal checked
 - [ ] **Always, Scheduled and Recurring** playlist settings save and reload; expiry disables only the relevant playlist item
