@@ -10,8 +10,10 @@ case "$cmd" in
     hostnamectl set-hostname "$1"
     ;;
   support-user)
-    [[ $# -eq 2 ]] || exit 2
-    user="$1"; password="$2"
+    [[ $# -eq 1 ]] || exit 2
+    user="$1"
+    IFS= read -r password || [[ -n "$password" ]]
+    [[ -n "$password" ]] || exit 2
     if id "$user" >/dev/null 2>&1; then
       usermod -aG sudo "$user"
     else
