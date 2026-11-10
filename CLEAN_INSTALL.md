@@ -57,8 +57,8 @@ The installer preserves the OS hostname and provisions `pi-player` as the intern
 1. Check local health: `curl --noproxy '*' -fsS http://127.0.0.1:8000/api/health`.
 2. In a browser on the staging LAN, open `http://<pi-ip>:8000/`. The First-Time Setup wizard should appear.
 3. Temporary bootstrap web credentials are `pi` / `pi`. **Use them only on the isolated staging LAN, immediately complete setup, and never leave the appliance exposed in this state.**
-4. Configure a unique permanent web administrator and final hostname. The temporary `pi` / `pi` web credentials authorize this one-time activation only; they are replaced afterward. If Raspberry Pi Imager already configured SSH, leave **Create an additional SSH support account** unchecked to preserve the existing SSH user and keys. Otherwise check it and supply a new, distinct SSH support account. Confirm old bootstrap web credentials no longer work.
-5. Reconfirm NTP/time zone and then configure branding, content, playback and (if required) static network parameters.
+4. Configure a unique permanent web administrator, final hostname, and optionally an NTP server. If an NTP server is already configured, the wizard prepopulates it; leaving the field blank preserves OS time settings. The temporary `pi` / `pi` web credentials authorize this one-time activation only; they are replaced afterward. If Raspberry Pi Imager already configured SSH, leave **Create an additional SSH support account** unchecked to preserve the existing SSH user and keys. Otherwise check it and supply a new, distinct SSH support account. Confirm old bootstrap web credentials no longer work.
+5. Reconfirm NTP synchronization (the wizard configures the server but cannot guarantee network reachability), then configure branding, content, playback and (if required) static network parameters.
 6. Reboot once and verify automatic kiosk launch on HDMI, as well as web administration from another workstation.
 
 ## Acceptance checklist
