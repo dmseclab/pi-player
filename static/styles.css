@@ -371,3 +371,7 @@
   min-width:110px;
   width:auto;
 }
+
+/* First-time setup: optional SSH account fields remain hidden despite grid styles. */
+#support-fields[hidden]{display:none!important}
+.setup-step #create-support-user{width:auto;min-height:auto;vertical-align:middle;margin-right:6px}
