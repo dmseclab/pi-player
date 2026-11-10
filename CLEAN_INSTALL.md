@@ -27,7 +27,7 @@ Configure the site-provided NTP address, substituting its actual IP or DNS name 
 NTP_SERVER="<approved-ntp-server>"
 sudo timedatectl set-timezone Africa/Johannesburg
 sudo install -d -m 0755 /etc/systemd/timesyncd.conf.d
-printf '[Time]\\nNTP=%s\\nFallbackNTP=\\n' "$NTP_SERVER" | sudo tee /etc/systemd/timesyncd.conf.d/50-pi-player.conf >/dev/null
+printf '[Time]\nNTP=%s\nFallbackNTP=\n' "$NTP_SERVER" | sudo tee /etc/systemd/timesyncd.conf.d/50-pi-player.conf >/dev/null
 sudo systemctl restart systemd-timesyncd.service
 timedatectl status
 timedatectl timesync-status
