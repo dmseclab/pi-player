@@ -44,9 +44,9 @@ class NetworkRequest(BaseModel):
     dns: list[str] = Field(default_factory=list, max_length=3)
 
 
-def _run_helper(*args: str) -> None:
+def _run_helper(*args: str, stdin_data: str | None = None) -> None:
     try:
-        subprocess.run(["sudo", HELPER, *args], check=True, timeout=30, capture_output=True, text=True)
+        subprocess.run(["sudo", HELPER, *args], check=True, timeout=30, capture_output=True, text=True, input=stdin_data)
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "System operation failed").strip()
         raise HTTPException(status_code=500, detail=detail[-500:]) from exc
@@ -107,7 +107,7 @@ def complete_setup(payload: FirstSetupRequest) -> dict:
     # OS changes happen through a narrowly-scoped root helper. If either fails,
     # web credentials are left unchanged so setup can be retried safely.
     _run_helper("hostname", hostname)
-    _run_helper("support-user", support_user, payload.support_password)
+    _run_helper("support-user", support_user, stdin_data=payload.support_password + "\n")
 
     with db() as conn:
         set_setting(conn, "admin_username", payload.admin_username.strip())
