@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import os
+import secrets
+import time
 import platform
 import re
 import shutil
@@ -33,6 +36,10 @@ class FirstSetupRequest(BaseModel):
     support_password: str | None = Field(default=None, max_length=256)
     hostname: str = Field(default="pi-player", min_length=1, max_length=63)
     ntp_server: str | None = Field(default=None, max_length=253)
+
+
+class SetupRebootRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
 
 
 class HostnameRequest(BaseModel):
@@ -144,13 +151,37 @@ def complete_setup(payload: FirstSetupRequest) -> dict:
     if support_user is not None:
         _run_helper("support-user", support_user, stdin_data=payload.support_password + "\n")
 
+    reboot_token = secrets.token_urlsafe(32)
     with db() as conn:
+        set_setting(conn, "setup_reboot_token_hash", hashlib.sha256(reboot_token.encode()).hexdigest())
+        set_setting(conn, "setup_reboot_token_expiry", str(int(time.time()) + 900))
         set_setting(conn, "admin_username", payload.admin_username.strip())
         set_setting(conn, "admin_password_hash", hash_password(payload.admin_password))
         set_setting(conn, "player_name", hostname)
         set_setting(conn, "setup_required", "0")
         audit(conn, payload.admin_username.strip(), "appliance.first_setup", "system", hostname, {"support_user_created": support_user is not None, "support_user": support_user, "ntp_configured": bool(ntp_server)})
-    return {"ok": True, "hostname": hostname, "message": "Initial security setup complete. Sign in with the new web administrator account."}
+    return {"ok": True, "hostname": hostname, "reboot_token": reboot_token, "message": "Initial security setup complete. Restart the player to apply settings."}
+
+
+@app.post("/api/setup/reboot")
+def reboot_after_setup(payload: SetupRebootRequest) -> dict:
+    """One-time restart following successful setup, without a persistent reboot token."""
+    with db() as conn:
+        token_hash = get_setting(conn, "setup_reboot_token_hash", "") or ""
+        try:
+            expiry = int(get_setting(conn, "setup_reboot_token_expiry", "0") or "0")
+        except ValueError:
+            expiry = 0
+        if (get_setting(conn, "setup_required", "1") != "0"
+                or not token_hash or time.time() > expiry
+                or not secrets.compare_digest(hashlib.sha256(payload.token.encode()).hexdigest(), token_hash)):
+            raise HTTPException(status_code=403, detail="Setup reboot authorization has expired or is invalid")
+        set_setting(conn, "setup_reboot_token_hash", "")
+        set_setting(conn, "setup_reboot_token_expiry", "0")
+        audit(conn, "setup", "appliance.setup_reboot", "system", socket.gethostname())
+    _run_helper("reboot")
+    return {"ok": True, "message": "Reboot requested"}
+
 
 
 @app.get("/api/system/info")
