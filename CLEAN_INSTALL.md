@@ -64,6 +64,8 @@ The installer preserves the OS hostname and provisions `pi-player` as the intern
 5. Reconfirm NTP synchronization (the wizard configures the server but cannot guarantee network reachability), then configure branding, content, playback and (if required) static network parameters.
 6. After saving First-Time Setup, use the one-time **Restart Player** button to perform a controlled reboot. Reconnect via SSH and verify automatic kiosk launch on HDMI, as well as web administration from another workstation.
 
+**Initial playlist:** A fresh appliance starts with one empty, active **Default** playlist. New assets are automatically added to that playlist as **disabled** items for review; enable them when ready. Existing playlist collections are not modified, and deliberately deleted default playlists are not recreated on subsequent startups.
+
 ## Acceptance checklist
 
 - [ ] Pi boot/login correct; single labwc Chromium kiosk launches automatically, without a second kiosk service
