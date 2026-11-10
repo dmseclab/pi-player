@@ -15,7 +15,7 @@ elif [[ -d "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.git" ]]; then
 else
   BRANCH=main
 fi
-printf 'Pi Player source branch: %s\\n' "$BRANCH"
+printf 'Pi Player source branch: %s\n' "$BRANCH"
 APPLIANCE="${PI_PLAYER_APPLIANCE:-0}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
