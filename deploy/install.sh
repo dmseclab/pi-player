@@ -16,6 +16,12 @@ systemctl disable --now pi-player-kiosk.service >/dev/null 2>&1 || true
 rm -f /etc/systemd/system/pi-player-kiosk.service
 install -m 0644 "$APP_DIR/deploy/pi-player-health.timer" /etc/systemd/system/pi-player-health.timer; install -m 0644 "$APP_DIR/deploy/pi-player-watchdog.service" /etc/systemd/system/pi-player-watchdog.service; install -m 0644 "$APP_DIR/deploy/pi-player-watchdog.timer" /etc/systemd/system/pi-player-watchdog.timer; chmod 0755 "$APP_DIR/deploy/pi-player-watchdog.sh"
 sed "s/create 0640 pi pi/create 0640 $APP_USER $APP_USER/" "$APP_DIR/deploy/pi-player.logrotate" > /etc/logrotate.d/pi-player
+# Preserve bounded system journal diagnostics across appliance reboots.
+if [[ "$APPLIANCE" == "1" ]]; then
+  install -d -m 0755 /etc/systemd/journald.conf.d /var/log/journal
+  printf '[Journal]\nStorage=persistent\nSystemMaxUse=100M\nSystemKeepFree=1G\n' > /etc/systemd/journald.conf.d/90-pi-player-persistent.conf
+  chmod 0644 /etc/systemd/journald.conf.d/90-pi-player-persistent.conf
+fi
 install -o root -g root -m 0755 "$APP_DIR/deploy/pi-player-system" /usr/local/sbin/pi-player-system; printf '%s ALL=(root) NOPASSWD: /usr/local/sbin/pi-player-system *\n' "$APP_USER" > /etc/sudoers.d/pi-player-system; chmod 0440 /etc/sudoers.d/pi-player-system
 if [[ ! -f /etc/pi-player/environment ]]; then printf 'PI_PLAYER_SESSION_SECRET=%s\n' "$(python3 -c 'import secrets; print(secrets.token_hex(32))')" > /etc/pi-player/environment; chmod 0600 /etc/pi-player/environment; fi
 USER_HOME="$(getent passwd "$APP_USER"|cut -d: -f6)"; LABWC_DIR="$USER_HOME/.config/labwc"; mkdir -p "$LABWC_DIR"; AUTOSTART="$LABWC_DIR/autostart"; touch "$AUTOSTART"; START_LINE="sleep 8 && $APP_DIR/deploy/launch-kiosk.sh &"; grep -Fq "$APP_DIR/deploy/launch-kiosk.sh" "$AUTOSTART" || printf '\n# Pi Player RK kiosk\n%s\n' "$START_LINE" >> "$AUTOSTART"; chown -R "$APP_USER:$APP_USER" "$USER_HOME/.config"
