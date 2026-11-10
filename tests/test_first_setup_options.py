@@ -2,7 +2,7 @@ import unittest
 from pydantic import ValidationError
 from fastapi import HTTPException
 
-from pi_player.appliance import FirstSetupRequest, _validate_support_user
+from pi_player.appliance import FirstSetupRequest, _validate_support_user, _validate_ntp_server
 
 
 class FirstTimeSetupOptionsTests(unittest.TestCase):
@@ -26,6 +26,17 @@ class FirstTimeSetupOptionsTests(unittest.TestCase):
         )
         self.assertTrue(request.create_support_user)
         self.assertEqual(_validate_support_user(request.support_username), "supporttech")
+
+    def test_optional_ntp_server(self):
+        request = FirstSetupRequest(
+            bootstrap_username="pi", bootstrap_password="pi",
+            admin_username="newadmin", admin_password="long-password-123",
+            hostname="pi-player-lab", ntp_server="172.18.5.20",
+        )
+        self.assertEqual(_validate_ntp_server(request.ntp_server), "172.18.5.20")
+        self.assertEqual(_validate_ntp_server(None), "")
+        with self.assertRaises(HTTPException):
+            _validate_ntp_server("bad server\\nInjected=yes")
 
     def test_reserved_support_user_rejected(self):
         with self.assertRaises(HTTPException):
