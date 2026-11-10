@@ -34,12 +34,14 @@
 <section class="setup-step">
 <div class="setup-step-heading"><span class="setup-step-number">4</span><div><h2>Player identity</h2><p>Set a hostname to identify this player on the network.</p></div></div>
 <div class="form-row"><label>Hostname</label><input id="hostname" value="pi-player" maxlength="63" required></div>
+<div class="form-row"><label>NTP server (optional)</label><input id="ntp-server" placeholder="e.g. 192.0.2.10 or time.example.local" maxlength="253" autocapitalize="off" spellcheck="false"></div>
+<p class="setup-note">Uses the existing NTP server when configured. Leave blank to retain the operating system\u2019s current time settings.</p>
 <p class="setup-note">Networking starts on DHCP. Static IPv4 can be configured after signing in to the admin page.</p>
 </section>
 <button class="primary setup-submit" type="submit">🔒&nbsp; Secure Player &amp; Continue</button>
 <footer class="setup-footer"><strong>Pi Player</strong><span> | </span><span>First-Time Setup</span><small>Simple. Secure. Reliable.</small></footer>
 </form>
 </main>
-<script src="/static/setup.js?v=2"></script>
+<script src="/static/setup.js?v=3"></script>
 </body>
 </html>
