@@ -28,3 +28,4 @@ player-direct-zabbix.png
 *.backup
 *.swp
 .DS_Store
+node_modules/
