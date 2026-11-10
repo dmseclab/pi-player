@@ -37,7 +37,28 @@ $("#setup-form").addEventListener("submit", async (event) => {
     const r = await fetch("/api/setup/complete", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
     const data = await r.json();
     if (!r.ok) throw new Error(data.detail || "Setup failed");
-    message("Setup complete. Opening the admin login...");
-    setTimeout(() => window.location.replace("/"), 1200);
+    message("Setup saved. Restart the player to activate the new configuration. Your SSH connection will disconnect during reboot.");
+    button.disabled = false;
+    button.textContent = "Restart Player";
+    button.type = "button";
+    button.onclick = async () => {
+      button.disabled = true;
+      button.textContent = "Restarting...";
+      try {
+        const response = await fetch("/api/setup/reboot", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({token: data.reboot_token})
+        });
+        if (!response.ok) {
+          const result = await response.json();
+          throw new Error(result.detail || "Restart failed");
+        }
+        message("Restart requested. Reconnect to this player's management page after it boots.");
+      } catch (error) {
+        message("Restart request could not be confirmed: " + error.message + ". Check the player before retrying.", true);
+        button.disabled = false;
+        button.textContent = "Restart Player";
+      }
+    };
   } catch (e) { message(e.message, true); button.disabled = false; button.textContent = "Secure Player & Continue"; }
 });
