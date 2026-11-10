@@ -59,7 +59,7 @@ The installer preserves the OS hostname and provisions `pi-player` as the intern
 3. Temporary bootstrap web credentials are `pi` / `pi`. **Use them only on the isolated staging LAN, immediately complete setup, and never leave the appliance exposed in this state.**
 4. Configure a unique permanent web administrator, final hostname, and optionally an NTP server. If an NTP server is already configured, the wizard prepopulates it; leaving the field blank preserves OS time settings. The temporary `pi` / `pi` web credentials authorize this one-time activation only; they are replaced afterward. If Raspberry Pi Imager already configured SSH, leave **Create an additional SSH support account** unchecked to preserve the existing SSH user and keys. Otherwise check it and supply a new, distinct SSH support account. Confirm old bootstrap web credentials no longer work.
 5. Reconfirm NTP synchronization (the wizard configures the server but cannot guarantee network reachability), then configure branding, content, playback and (if required) static network parameters.
-6. Reboot once and verify automatic kiosk launch on HDMI, as well as web administration from another workstation.
+6. After saving First-Time Setup, use the one-time **Restart Player** button to perform a controlled reboot. Reconnect via SSH and verify automatic kiosk launch on HDMI, as well as web administration from another workstation.
 
 ## Acceptance checklist
 
@@ -72,8 +72,10 @@ The installer preserves the OS hostname and provisions `pi-player` as the intern
 - [ ] Image / PDF / video / website content upload, playback and removal checked
 - [ ] **Always, Scheduled and Recurring** playlist settings save and reload; expiry disables only the relevant playlist item
 - [ ] Playlist export/import preserves schedule settings (subject to acceptance tests on the audit branch)
-- [ ] Controlled reboot returns to playback without manual assistance; no unexpected API, Chromium or GPU watchdog restart loop
+- [ ] Controlled reboot returns to playback without manual assistance; dedicated Chromium profile singleton matches current hostname and active browser PID; no unexpected API, Chromium or GPU watchdog restart loop
 - [ ] No site-specific credentials, IPs, operational assets or private keys copied from the original player
+
+**Kiosk lifecycle:** a dedicated `pi-player`-only Chromium profile is used. On tty1 shutdown, the appliance stops that account's Chromium processes. On launch it cleans only the dedicated profile's stale Chromium Singleton symlinks when no Chromium remains under the appliance account. Never remove an active profile lock manually. The watchdog is restricted to the kiosk account and uses the same tty1 lifecycle hook.
 
 ## Diagnostics
 
