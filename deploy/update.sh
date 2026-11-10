@@ -99,7 +99,7 @@ if [[ -f /etc/systemd/system/getty@tty1.service.d/autologin.conf ]]; then
   install -o root -g root -m 0755 "$APP_DIR/deploy/pi-player-system" /usr/local/sbin/pi-player-system
   install -o root -g root -m 0755 "$APP_DIR/deploy/kiosk-session-cleanup.sh" /usr/local/sbin/pi-player-kiosk-cleanup
   if ! grep -Fq 'ExecStopPost=/usr/local/sbin/pi-player-kiosk-cleanup' /etc/systemd/system/getty@tty1.service.d/autologin.conf; then
-    printf '\\nExecStopPost=/usr/local/sbin/pi-player-kiosk-cleanup\\n' >> /etc/systemd/system/getty@tty1.service.d/autologin.conf
+    printf '\nExecStopPost=/usr/local/sbin/pi-player-kiosk-cleanup\n' >> /etc/systemd/system/getty@tty1.service.d/autologin.conf
   fi
   systemctl daemon-reload
 fi
