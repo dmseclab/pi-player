@@ -6,7 +6,7 @@
 
 1. Use a **new SD image**, not a cloned office-Pi card. Enable SSH for a bootstrap administrator with sudo access during initial imaging. Keep the new Pi on a trusted, restricted staging LAN.
 2. Supply network connectivity for Debian packages, Python dependencies and GitHub access (or prepare an approved internal mirror/proxy). Do not disable TLS certificate verification.
-3. Give each device a **unique hostname** during first-time setup. The default temporary hostname is `pi-player`; two fresh devices using it simultaneously can conflict.
+3. Give each device a **unique hostname** in Raspberry Pi Imager (e.g. `pi-player-lab`). The installer preserves this hostname; the First-Time Setup wizard displays it and permits an administrator-selected change. Avoid duplicate hostnames on the network.
 4. After SSH access, complete **Step 1 — Configure / confirm NTP server** below. For South African deployment, use `Africa/Johannesburg`; verify clock synchronization before installation.
 5. Do **not** copy `/var/lib/pi-player`, `/etc/pi-player/environment`, support credentials, SSH keys, or uploaded operational media from another Pi. Each new appliance must have a unique secret, user credentials, and its own assets.
 
@@ -48,7 +48,7 @@ git status --short --branch
 sudo -E env PI_PLAYER_APPLIANCE=1 PI_PLAYER_USER="$USER" bash bootstrap-install.sh
 ```
 
-The installer provisions `pi-player` as the internal kiosk user; the initial SSH/bootstrap user remains separate. Installation copies application code to `/opt/pi-player-rk`, persistent data to `/var/lib/pi-player`, and service logs to `/var/log/pi-player`.
+The installer preserves the OS hostname and provisions `pi-player` as the internal kiosk user; the initial SSH/bootstrap user remains separate. Installation copies application code to `/opt/pi-player-rk`, persistent data to `/var/lib/pi-player`, and service logs to `/var/log/pi-player`.
 
 **Important:** Do not execute this install command on an existing production appliance without separately reviewing backup and update impact. Use `deploy/update.sh` for upgrades.
 
