@@ -152,6 +152,24 @@ def init_db() -> None:
             "INSERT OR IGNORE INTO playback_state (id, state, updated_at) VALUES (1, 'stopped', ?)",
             (now_iso(),),
         )
+        # Create one active empty playlist for first-time installs and upgrades
+        # that have never had a playlist. Do not recreate it after deletion:
+        # operators may intentionally remove the last playlist.
+        if get_setting(conn, "default_playlist_initialized") != "1":
+            count = conn.execute("SELECT COUNT(*) FROM playlists").fetchone()[0]
+            if count == 0:
+                playlist_id = str(uuid.uuid4())
+                created = now_iso()
+                conn.execute(
+                    """INSERT INTO playlists (id, name, is_active, created_at, updated_at)
+                       VALUES (?, 'Default', 1, ?, ?)""",
+                    (playlist_id, created, created),
+                )
+                conn.execute(
+                    "UPDATE playback_state SET playlist_id = ?, updated_at = ? WHERE id = 1",
+                    (playlist_id, created),
+                )
+            set_setting(conn, "default_playlist_initialized", "1")
 
 
 def set_default(conn: sqlite3.Connection, key: str, value: str) -> None:
