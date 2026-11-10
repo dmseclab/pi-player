@@ -51,12 +51,15 @@ class PdfTests(unittest.TestCase):
         package.raise_for_status()
         imported = self.client.post('/api/playlists/import', files={'file': ('test.zip', package.content, 'application/zip')})
         self.assertEqual(imported.status_code, 200, imported.text)
-        new_assets = self.client.get('/api/assets').json()
-        copies = [a for a in new_assets if a['type'] == 'pdf' and a['id'] != asset['id']]
-        self.assertEqual(copies[-1]['pdf_page_seconds'], 3)
-        self.assertTrue(copies[-1]['pdf_play_once'])
-        self.assertEqual(copies[-1]['pdf_page_count'],3)
-        self.assertEqual(self.client.get(copies[-1]['media_url']).content, content)
+        imported_pid = imported.json()['playlist_id']
+        imported_playlist = next(p for p in self.client.get('/api/playlists').json() if p['id'] == imported_pid)
+        imported_asset_id = imported_playlist['items'][0]['asset_id']
+        copies = [a for a in self.client.get('/api/assets').json() if a['id'] == imported_asset_id]
+        self.assertEqual(len(copies), 1)
+        self.assertEqual(copies[0]['pdf_page_seconds'], 3)
+        self.assertTrue(copies[0]['pdf_play_once'])
+        self.assertEqual(copies[0]['pdf_page_count'], 3)
+        self.assertEqual(self.client.get(copies[0]['media_url']).content, content)
 
     def test_playlist_package_preserves_scheduled_window(self):
         asset = self.client.post('/api/assets/link', json={
