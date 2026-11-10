@@ -45,3 +45,7 @@ jobs:
         run: |
           node tests/test_player.cjs
           node tests/test_pdf_player.cjs
+      - name: Check admin DOM rendering
+        run: |
+          npm install --no-save --no-package-lock jsdom@26.1.0
+          NODE_PATH="$PWD/node_modules" node tests/test_admin_observers.cjs
