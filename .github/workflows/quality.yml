@@ -1,0 +1,47 @@
+name: Pi Player Quality Gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  python-and-packaging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install application requirements
+        run: python -m pip install -r requirements.txt
+      - name: Python and shell syntax
+        run: |
+          python -m compileall -q pi_player
+          bash -n bootstrap-install.sh deploy/*.sh deploy/pi-player-system
+      - name: Run Python unit tests with isolated runtime
+        env:
+          PI_PLAYER_DATA_DIR: ${{ runner.temp }}/pi-player-data
+          PI_PLAYER_LOG_DIR: ${{ runner.temp }}/pi-player-logs
+        run: python -m unittest discover -s tests -v
+      - name: Scan repository and history (redacted)
+        run: python deploy/repo-preflight.py
+
+  javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate JavaScript syntax
+        run: |
+          for file in static/*.js tests/*.cjs; do
+            node --check "$file"
+          done
+      - name: Run dependency-free player tests
+        run: |
+          node tests/test_player.cjs
+          node tests/test_pdf_player.cjs
