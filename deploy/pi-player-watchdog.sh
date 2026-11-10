@@ -32,7 +32,7 @@ if ! curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8000/api/health >/dev
   else log "API health failed; automatic recovery suppressed"; fi
   exit 0
 fi
-if ! pgrep -x chromium >/dev/null 2>&1; then
+if ! pgrep -u pi-player -x chromium >/dev/null 2>&1; then
   if authorize kiosk; then
     log "Chromium missing; authorized restart tty1 kiosk session"
     restart_service kiosk getty@tty1.service
