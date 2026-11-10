@@ -7,8 +7,33 @@
 1. Use a **new SD image**, not a cloned office-Pi card. Enable SSH for a bootstrap administrator with sudo access during initial imaging. Keep the new Pi on a trusted, restricted staging LAN.
 2. Supply network connectivity for Debian packages, Python dependencies and GitHub access (or prepare an approved internal mirror/proxy). Do not disable TLS certificate verification.
 3. Give each device a **unique hostname** during first-time setup. The default temporary hostname is `pi-player`; two fresh devices using it simultaneously can conflict.
-4. Verify local time zone. Date/time scheduling uses the Pi's local clock. For South African deployment, configure `Africa/Johannesburg` and an approved NTP source, then verify synchronization.
+4. After SSH access, complete **Step 1 — Configure / confirm NTP server** below. For South African deployment, use `Africa/Johannesburg`; verify clock synchronization before installation.
 5. Do **not** copy `/var/lib/pi-player`, `/etc/pi-player/environment`, support credentials, SSH keys, or uploaded operational media from another Pi. Each new appliance must have a unique secret, user credentials, and its own assets.
+
+## Step 1 after first SSH login — Configure / confirm NTP server
+
+**Complete this before `apt`, GitHub clone, or Pi Player installation.** An incorrect date can cause HTTPS certificate validation failures and incorrect Scheduled/Recurring playback windows. Use an **approved, reachable NTP server for the deployment site**; do not put site-specific addresses in this public repository.
+
+On a fresh Raspberry Pi OS Lite image:
+
+```bash
+timedatectl status
+timedatectl timesync-status || true
+```
+
+Configure the site-provided NTP address, substituting its actual IP or DNS name for the placeholder:
+
+```bash
+NTP_SERVER="<approved-ntp-server>"
+sudo timedatectl set-timezone Africa/Johannesburg
+sudo install -d -m 0755 /etc/systemd/timesyncd.conf.d
+printf '[Time]\\nNTP=%s\\nFallbackNTP=\\n' "$NTP_SERVER" | sudo tee /etc/systemd/timesyncd.conf.d/50-pi-player.conf >/dev/null
+sudo systemctl restart systemd-timesyncd.service
+timedatectl status
+timedatectl timesync-status
+```
+
+**Acceptance:** `System clock synchronized: yes`, the expected local date/time and timezone, and the intended NTP server shown in `timedatectl timesync-status`. If synchronization remains `no`, inspect `journalctl -u systemd-timesyncd -n 30 --no-pager` and validate DNS, routing and UDP/123 reachability to the approved NTP server. Do not proceed with time-sensitive deployment until synchronization is verified.
 
 ## Install from current main
 
@@ -33,7 +58,7 @@ The installer provisions `pi-player` as the internal kiosk user; the initial SSH
 2. In a browser on the staging LAN, open `http://<pi-ip>:8000/`. The First-Time Setup wizard should appear.
 3. Temporary bootstrap web credentials are `pi` / `pi`. **Use them only on the isolated staging LAN, immediately complete setup, and never leave the appliance exposed in this state.**
 4. Configure a unique web admin, a distinct SSH/support user, strong unique passwords and final hostname. Confirm old bootstrap web credentials no longer work.
-5. Verify NTP/time zone and then configure branding, content, playback and (if required) static network parameters.
+5. Reconfirm NTP/time zone and then configure branding, content, playback and (if required) static network parameters.
 6. Reboot once and verify automatic kiosk launch on HDMI, as well as web administration from another workstation.
 
 ## Acceptance checklist
