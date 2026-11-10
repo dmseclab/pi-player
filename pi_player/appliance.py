@@ -19,6 +19,8 @@ from .security import hash_password, verify_password
 HELPER = os.environ.get("PI_PLAYER_SYSTEM_HELPER", "/usr/local/sbin/pi-player-system")
 HOST_RE = re.compile(r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$")
 USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,30}$")
+NTP_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,252}$")
+NTP_CONFIG = Path("/etc/systemd/timesyncd.conf.d/50-pi-player.conf")
 
 
 class FirstSetupRequest(BaseModel):
@@ -30,6 +32,7 @@ class FirstSetupRequest(BaseModel):
     support_username: str | None = Field(default=None, max_length=31)
     support_password: str | None = Field(default=None, max_length=256)
     hostname: str = Field(default="pi-player", min_length=1, max_length=63)
+    ntp_server: str | None = Field(default=None, max_length=253)
 
 
 class HostnameRequest(BaseModel):
@@ -69,6 +72,26 @@ def _validate_support_user(value: str) -> str:
     return value
 
 
+def _configured_ntp_server() -> str:
+    """Return a single configured appliance NTP server, if present."""
+    try:
+        lines = NTP_CONFIG.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    for line in lines:
+        line = line.strip()
+        if line.startswith("NTP="):
+            return line.partition("=")[2].strip().split()[0] if line.partition("=")[2].strip() else ""
+    return ""
+
+
+def _validate_ntp_server(value: str | None) -> str:
+    server = (value or "").strip()
+    if server and not NTP_RE.fullmatch(server):
+        raise HTTPException(status_code=400, detail="Invalid NTP server")
+    return server
+
+
 def _ipv4_addresses() -> list[str]:
     result: list[str] = []
     try:
@@ -90,12 +113,13 @@ def setup_page():
 def setup_status() -> dict:
     with db() as conn:
         required = get_setting(conn, "setup_required", "0") == "1"
-    return {"setup_required": required, "hostname": socket.gethostname(), "ip_addresses": _ipv4_addresses()}
+    return {"setup_required": required, "hostname": socket.gethostname(), "ip_addresses": _ipv4_addresses(), "ntp_server": _configured_ntp_server()}
 
 
 @app.post("/api/setup/complete")
 def complete_setup(payload: FirstSetupRequest) -> dict:
     hostname = _validate_hostname(payload.hostname)
+    ntp_server = _validate_ntp_server(payload.ntp_server)
     support_user = None
     if payload.create_support_user:
         if not payload.support_username or not payload.support_password:
@@ -115,6 +139,8 @@ def complete_setup(payload: FirstSetupRequest) -> dict:
     # web credentials are left unchanged so setup can be retried safely.
     if hostname != socket.gethostname().lower():
         _run_helper("hostname", hostname)
+    if ntp_server and ntp_server != _configured_ntp_server():
+        _run_helper("ntp", ntp_server)
     if support_user is not None:
         _run_helper("support-user", support_user, stdin_data=payload.support_password + "\n")
 
@@ -123,7 +149,7 @@ def complete_setup(payload: FirstSetupRequest) -> dict:
         set_setting(conn, "admin_password_hash", hash_password(payload.admin_password))
         set_setting(conn, "player_name", hostname)
         set_setting(conn, "setup_required", "0")
-        audit(conn, payload.admin_username.strip(), "appliance.first_setup", "system", hostname, {"support_user_created": support_user is not None, "support_user": support_user})
+        audit(conn, payload.admin_username.strip(), "appliance.first_setup", "system", hostname, {"support_user_created": support_user is not None, "support_user": support_user, "ntp_configured": bool(ntp_server)})
     return {"ok": True, "hostname": hostname, "message": "Initial security setup complete. Sign in with the new web administrator account."}
 
 
