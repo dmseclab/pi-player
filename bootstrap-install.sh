@@ -33,8 +33,10 @@ apt-get update
 apt-get install -y git ca-certificates curl
 
 if [[ -d "$INSTALL_DIR/.git" ]]; then
-  git -C "$INSTALL_DIR" fetch origin "$BRANCH"
-  git -C "$INSTALL_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
+  # An existing --single-branch clone may only track main. Fetch the
+  # requested branch into its explicit remote-tracking ref before checkout.
+  git -C "$INSTALL_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+  git -C "$INSTALL_DIR" checkout -B "$BRANCH" "refs/remotes/origin/$BRANCH"
 else
   rm -rf "$INSTALL_DIR"
   git clone --branch "$BRANCH" --single-branch "$REPO_URL" "$INSTALL_DIR"
