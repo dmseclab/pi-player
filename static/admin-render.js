@@ -39,7 +39,7 @@ async function refreshAssetsAndPlaylists(){await loadAssets();await Promise.all(
 
 // Optional feature modules are loaded after admin.js so they can extend the existing UI.
 window.addEventListener('load',()=>{
-  for(const src of ['/static/schedule-ui.js?v=dev-schedule-2','/static/ntp-ui.js?v=dev-ntp-1']){
+  for(const src of ['/static/schedule-ui.js?v=dev-schedule-3','/static/ntp-ui.js?v=dev-ntp-1']){
     const script=document.createElement('script');script.src=src;document.body.appendChild(script);
   }
 });
