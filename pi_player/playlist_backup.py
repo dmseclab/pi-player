@@ -15,6 +15,7 @@ from starlette.background import BackgroundTask
 from .config import ALLOWED_IMAGE_EXTENSIONS, ALLOWED_VIDEO_EXTENSIONS, ASSET_DIR, TMP_DIR
 from .db import audit, db, get_setting, now_iso
 from .main import app, require_user
+from .playlist_schedule import export_item_schedule, import_item_schedule
 
 PACKAGE_FORMAT = "pi-player-playlist"
 PACKAGE_VERSION = 1
@@ -82,6 +83,13 @@ def export_playlist(
                 playlist_items.position,
                 playlist_items.duration_seconds,
                 playlist_items.enabled,
+                playlist_items.schedule_enabled,
+                playlist_items.schedule_mode,
+                playlist_items.schedule_start_date,
+                playlist_items.schedule_end_date,
+                playlist_items.schedule_start_time,
+                playlist_items.schedule_end_time,
+                playlist_items.schedule_weekdays,
                 assets.*
             FROM playlist_items
             JOIN assets ON assets.id = playlist_items.asset_id
@@ -131,6 +139,7 @@ def export_playlist(
                     "position": record["position"],
                     "duration_seconds": record["duration_seconds"],
                     "enabled": bool(record["enabled"]),
+                    **export_item_schedule(record),
                 }
             )
 
@@ -338,14 +347,18 @@ def import_playlist(
                     if duration < 1 or duration > 86400:
                         raise HTTPException(status_code=400, detail="Playlist item display time is invalid")
                     position = int(item.get("position", 0))
+                    schedule = import_item_schedule(item)
                     item_id = str(uuid.uuid4())
                     conn.execute(
                         """
                         INSERT INTO playlist_items
-                        (id, playlist_id, asset_id, position, duration_seconds, enabled, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        (id, playlist_id, asset_id, position, duration_seconds, enabled, created_at, updated_at,
+                         schedule_enabled, schedule_mode, schedule_start_date, schedule_end_date,
+                         schedule_weekdays, schedule_start_time, schedule_end_time)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (item_id, playlist_id, asset_id, position, duration, int(bool(item.get("enabled", True))), created, created),
+                        (item_id, playlist_id, asset_id, position, duration, int(bool(item.get("enabled", True))),
+                         created, created, *schedule),
                     )
 
                 audit(
