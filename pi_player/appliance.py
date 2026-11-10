@@ -26,8 +26,9 @@ class FirstSetupRequest(BaseModel):
     bootstrap_password: str
     admin_username: str = Field(min_length=2, max_length=64)
     admin_password: str = Field(min_length=9, max_length=256)
-    support_username: str = Field(min_length=2, max_length=31)
-    support_password: str = Field(min_length=9, max_length=256)
+    create_support_user: bool = False
+    support_username: str | None = Field(default=None, max_length=31)
+    support_password: str | None = Field(default=None, max_length=256)
     hostname: str = Field(default="pi-player", min_length=1, max_length=63)
 
 
@@ -95,7 +96,13 @@ def setup_status() -> dict:
 @app.post("/api/setup/complete")
 def complete_setup(payload: FirstSetupRequest) -> dict:
     hostname = _validate_hostname(payload.hostname)
-    support_user = _validate_support_user(payload.support_username)
+    support_user = None
+    if payload.create_support_user:
+        if not payload.support_username or not payload.support_password:
+            raise HTTPException(status_code=400, detail="SSH username and password are required when creating a support account")
+        if len(payload.support_password) < 9:
+            raise HTTPException(status_code=400, detail="SSH support password must contain at least 9 characters")
+        support_user = _validate_support_user(payload.support_username)
     with db() as conn:
         if get_setting(conn, "setup_required", "0") != "1":
             raise HTTPException(status_code=409, detail="First-time setup has already been completed")
@@ -106,15 +113,17 @@ def complete_setup(payload: FirstSetupRequest) -> dict:
 
     # OS changes happen through a narrowly-scoped root helper. If either fails,
     # web credentials are left unchanged so setup can be retried safely.
-    _run_helper("hostname", hostname)
-    _run_helper("support-user", support_user, stdin_data=payload.support_password + "\n")
+    if hostname != socket.gethostname().lower():
+        _run_helper("hostname", hostname)
+    if support_user is not None:
+        _run_helper("support-user", support_user, stdin_data=payload.support_password + "\n")
 
     with db() as conn:
         set_setting(conn, "admin_username", payload.admin_username.strip())
         set_setting(conn, "admin_password_hash", hash_password(payload.admin_password))
         set_setting(conn, "player_name", hostname)
         set_setting(conn, "setup_required", "0")
-        audit(conn, payload.admin_username.strip(), "appliance.first_setup", "system", hostname, {"support_user": support_user})
+        audit(conn, payload.admin_username.strip(), "appliance.first_setup", "system", hostname, {"support_user_created": support_user is not None, "support_user": support_user})
     return {"ok": True, "hostname": hostname, "message": "Initial security setup complete. Sign in with the new web administrator account."}
 
 
