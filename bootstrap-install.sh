@@ -4,7 +4,18 @@ set -euo pipefail
 REPO_URL="${PI_PLAYER_REPO_URL:-https://github.com/dmseclab/pi-player.git}"
 INSTALL_DIR="${PI_PLAYER_SOURCE_DIR:-/opt/pi-player-src}"
 APP_USER="${PI_PLAYER_USER:-${SUDO_USER:-$(id -un)}}"
-BRANCH="${PI_PLAYER_BRANCH:-main}"
+# By default, install the branch the operator explicitly checked out.
+# PI_PLAYER_BRANCH overrides it for scripted deployments; source archives
+# without Git metadata retain main as a safe published default.
+if [[ -n "${PI_PLAYER_BRANCH:-}" ]]; then
+  BRANCH="$PI_PLAYER_BRANCH"
+elif [[ -d "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.git" ]]; then
+  BRANCH="$(git -C "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" symbolic-ref --quiet --short HEAD || true)"
+  [[ -n "$BRANCH" ]] || { echo "Detached source checkout: set PI_PLAYER_BRANCH explicitly." >&2; exit 1; }
+else
+  BRANCH=main
+fi
+printf 'Pi Player source branch: %s\\n' "$BRANCH"
 APPLIANCE="${PI_PLAYER_APPLIANCE:-0}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
