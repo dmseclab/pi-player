@@ -10,13 +10,25 @@ const message = (text, error=false) => { $("#setup-message").innerHTML = `<div c
   } catch (_) { message("Unable to read player setup status.", true); }
 })();
 
+const supportToggle = $("#create-support-user");
+const supportFields = $("#support-fields");
+const updateSupportFields = () => {
+  supportFields.hidden = !supportToggle.checked;
+  $("#support-username").required = supportToggle.checked;
+  $("#support-password").required = supportToggle.checked;
+};
+supportToggle.addEventListener("change", updateSupportFields);
+updateSupportFields();
+
 $("#setup-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = event.submitter; button.disabled = true; button.textContent = "Applying...";
   const payload = {
     bootstrap_username: $("#bootstrap-username").value.trim(), bootstrap_password: $("#bootstrap-password").value,
     admin_username: $("#admin-username").value.trim(), admin_password: $("#admin-password").value,
-    support_username: $("#support-username").value.trim(), support_password: $("#support-password").value,
+    create_support_user: supportToggle.checked,
+    support_username: supportToggle.checked ? $("#support-username").value.trim() : null,
+    support_password: supportToggle.checked ? $("#support-password").value : null,
     hostname: $("#hostname").value.trim()
   };
   try {
