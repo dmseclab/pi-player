@@ -5,13 +5,23 @@ cmd="${1:-}"
 shift || true
 
 case "$cmd" in
+  reboot)
+    [[ $# -eq 0 ]] || exit 2
+    systemctl --no-block reboot
+    ;;
+  restart-kiosk)
+    [[ $# -eq 0 ]] || exit 2
+    systemctl --no-block restart getty@tty1.service
+    ;;
   hostname)
     [[ $# -eq 1 ]] || exit 2
     hostnamectl set-hostname "$1"
     ;;
   support-user)
-    [[ $# -eq 2 ]] || exit 2
-    user="$1"; password="$2"
+    [[ $# -eq 1 ]] || exit 2
+    user="$1"
+    IFS= read -r password || [[ -n "$password" ]]
+    [[ -n "$password" ]] || exit 2
     if id "$user" >/dev/null 2>&1; then
       usermod -aG sudo "$user"
     else

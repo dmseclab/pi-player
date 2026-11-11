@@ -4,7 +4,18 @@ set -euo pipefail
 REPO_URL="${PI_PLAYER_REPO_URL:-https://github.com/dmseclab/pi-player.git}"
 INSTALL_DIR="${PI_PLAYER_SOURCE_DIR:-/opt/pi-player-src}"
 APP_USER="${PI_PLAYER_USER:-${SUDO_USER:-$(id -un)}}"
-BRANCH="${PI_PLAYER_BRANCH:-main}"
+# By default, install the branch the operator explicitly checked out.
+# PI_PLAYER_BRANCH overrides it for scripted deployments; source archives
+# without Git metadata retain main as a safe published default.
+if [[ -n "${PI_PLAYER_BRANCH:-}" ]]; then
+  BRANCH="$PI_PLAYER_BRANCH"
+elif [[ -d "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.git" ]]; then
+  BRANCH="$(git -C "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" symbolic-ref --quiet --short HEAD || true)"
+  [[ -n "$BRANCH" ]] || { echo "Detached source checkout: set PI_PLAYER_BRANCH explicitly." >&2; exit 1; }
+else
+  BRANCH=main
+fi
+printf 'Pi Player source branch: %s\n' "$BRANCH"
 APPLIANCE="${PI_PLAYER_APPLIANCE:-0}"
 
 if [[ "$(id -u)" -ne 0 ]]; then
@@ -22,8 +33,10 @@ apt-get update
 apt-get install -y git ca-certificates curl
 
 if [[ -d "$INSTALL_DIR/.git" ]]; then
-  git -C "$INSTALL_DIR" fetch origin "$BRANCH"
-  git -C "$INSTALL_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
+  # An existing --single-branch clone may only track main. Fetch the
+  # requested branch into its explicit remote-tracking ref before checkout.
+  git -C "$INSTALL_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"
+  git -C "$INSTALL_DIR" checkout -B "$BRANCH" "refs/remotes/origin/$BRANCH"
 else
   rm -rf "$INSTALL_DIR"
   git clone --branch "$BRANCH" --single-branch "$REPO_URL" "$INSTALL_DIR"

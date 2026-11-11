@@ -51,12 +51,52 @@ class PdfTests(unittest.TestCase):
         package.raise_for_status()
         imported = self.client.post('/api/playlists/import', files={'file': ('test.zip', package.content, 'application/zip')})
         self.assertEqual(imported.status_code, 200, imported.text)
-        new_assets = self.client.get('/api/assets').json()
-        copies = [a for a in new_assets if a['type'] == 'pdf' and a['id'] != asset['id']]
-        self.assertEqual(copies[-1]['pdf_page_seconds'], 3)
-        self.assertTrue(copies[-1]['pdf_play_once'])
-        self.assertEqual(copies[-1]['pdf_page_count'],3)
-        self.assertEqual(self.client.get(copies[-1]['media_url']).content, content)
+        imported_pid = imported.json()['playlist_id']
+        imported_playlist = next(p for p in self.client.get('/api/playlists').json() if p['id'] == imported_pid)
+        imported_asset_id = imported_playlist['items'][0]['asset_id']
+        copies = [a for a in self.client.get('/api/assets').json() if a['id'] == imported_asset_id]
+        self.assertEqual(len(copies), 1)
+        self.assertEqual(copies[0]['pdf_page_seconds'], 3)
+        self.assertTrue(copies[0]['pdf_play_once'])
+        self.assertEqual(copies[0]['pdf_page_count'], 3)
+        self.assertEqual(self.client.get(copies[0]['media_url']).content, content)
+
+    def test_playlist_package_preserves_scheduled_window(self):
+        asset = self.client.post('/api/assets/link', json={
+            'name': 'Schedule portability fixture',
+            'url': 'https://example.com'
+        }).json()
+        pid = self.client.post('/api/playlists', json={'name': 'Schedule portability'}).json()['id']
+        created = self.client.post(f'/api/playlists/{pid}/items', json={
+            'asset_id': asset['id'], 'duration_seconds': 15, 'enabled': True
+        })
+        created.raise_for_status()
+        item_id = created.json()['items'][0]['id']
+        updated = self.client.put(f'/api/playlists/{pid}/items/{item_id}', json={
+            'schedule_enabled': True,
+            'schedule_mode': 'window',
+            'schedule_start_date': '2031-11-09',
+            'schedule_start_time': '06:00',
+            'schedule_end_date': '2031-11-12',
+            'schedule_end_time': '18:00',
+        })
+        updated.raise_for_status()
+        package = self.client.get(f'/api/playlists/{pid}/export')
+        package.raise_for_status()
+        imported = self.client.post('/api/playlists/import', files={
+            'file': ('scheduled.zip', package.content, 'application/zip')
+        })
+        imported.raise_for_status()
+        new_pid = imported.json()['playlist_id']
+        new_playlist = next(p for p in self.client.get('/api/playlists').json() if p['id'] == new_pid)
+        scheduled = new_playlist['items'][0]
+        self.assertTrue(scheduled['enabled'])
+        self.assertEqual(scheduled['schedule_enabled'], 1)
+        self.assertEqual(scheduled['schedule_mode'], 'window')
+        self.assertEqual(scheduled['schedule_start_date'], '2031-11-09')
+        self.assertEqual(scheduled['schedule_start_time'], '06:00')
+        self.assertEqual(scheduled['schedule_end_date'], '2031-11-12')
+        self.assertEqual(scheduled['schedule_end_time'], '18:00')
 
     def test_video_support_survives_consolidation(self):
         response = self.client.post('/api/assets/upload', files={'file': ('clip.mp4', b'video transport fixture', 'video/mp4')}, data={'video_muted':'false','video_loop':'true'})

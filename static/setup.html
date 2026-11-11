@@ -16,26 +16,32 @@
 </header>
 <div id="setup-message"></div>
 <section class="setup-step">
-<div class="setup-step-heading"><span class="setup-step-number">1</span><div><h2>Temporary login</h2><p>Use the temporary credentials to continue.</p></div></div>
+<div class="setup-step-heading"><span class="setup-step-number">1</span><div><h2>Activate this player</h2><p>Enter the temporary web credentials supplied with Pi Player. They are required once to authorize setup, then replaced by your permanent administrator login.</p></div></div>
 <div class="grid two"><div class="form-row"><label>Temporary username</label><input id="bootstrap-username" value="pi" autocomplete="username" required></div><div class="form-row"><label>Temporary password</label><input id="bootstrap-password" type="password" autocomplete="current-password" required></div></div>
 </section>
 <section class="setup-step">
-<div class="setup-step-heading"><span class="setup-step-number">2</span><div><h2>Web administrator</h2><p>Create the administrator account for the web interface.</p></div></div>
+<div class="setup-step-heading"><span class="setup-step-number">2</span><div><h2>Permanent web administrator</h2><p>Choose the username and password you will use to manage this player after activation.</p></div></div>
 <div class="grid two"><div class="form-row"><label>Admin username</label><input id="admin-username" autocomplete="username" required></div><div class="form-row"><label>Admin password</label><input id="admin-password" type="password" minlength="9" autocomplete="new-password" required></div></div>
 </section>
 <section class="setup-step">
-<div class="setup-step-heading"><span class="setup-step-number">3</span><div><h2>SSH support account</h2><p>Create a dedicated support account for SSH access.</p></div></div>
-<div class="grid two"><div class="form-row"><label>SSH username</label><input id="support-username" pattern="[a-z_][a-z0-9_-]*" autocomplete="username" required></div><div class="form-row"><label>SSH password</label><input id="support-password" type="password" minlength="9" autocomplete="new-password" required></div></div>
+<div class="setup-step-heading"><span class="setup-step-number">3</span><div><h2>SSH support account (optional)</h2><p>If SSH is already configured through Raspberry Pi Imager, leave the existing account unchanged. Otherwise, create an additional SSH support user.</p></div></div>
+<label class="setup-note"><input id="create-support-user" type="checkbox"> Create an additional SSH support account</label>
+<div id="support-fields" class="grid two" hidden>
+  <div class="form-row"><label>SSH username</label><input id="support-username" pattern="[a-z_][a-z0-9_-]*" autocomplete="username"></div>
+  <div class="form-row"><label>SSH password</label><input id="support-password" type="password" minlength="9" autocomplete="new-password"></div>
+</div>
 </section>
 <section class="setup-step">
 <div class="setup-step-heading"><span class="setup-step-number">4</span><div><h2>Player identity</h2><p>Set a hostname to identify this player on the network.</p></div></div>
 <div class="form-row"><label>Hostname</label><input id="hostname" value="pi-player" maxlength="63" required></div>
+<div class="form-row"><label>NTP server (optional)</label><input id="ntp-server" placeholder="e.g. 192.0.2.10 or time.example.local" maxlength="253" autocapitalize="off" spellcheck="false"></div>
+<p class="setup-note">Uses the existing NTP server when configured. Leave blank to retain the operating system\u2019s current time settings.</p>
 <p class="setup-note">Networking starts on DHCP. Static IPv4 can be configured after signing in to the admin page.</p>
 </section>
 <button class="primary setup-submit" type="submit">🔒&nbsp; Secure Player &amp; Continue</button>
 <footer class="setup-footer"><strong>Pi Player</strong><span> | </span><span>First-Time Setup</span><small>Simple. Secure. Reliable.</small></footer>
 </form>
 </main>
-<script src="/static/setup.js?v=1"></script>
+<script src="/static/setup.js?v=3"></script>
 </body>
 </html>

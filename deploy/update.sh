@@ -93,6 +93,16 @@ expected="$("$APP_DIR/.venv/bin/python" -c "import sys;sys.path.insert(0,'$APP_D
 systemctl start pi-player-api.service
 health_check "$expected"
 resume_timers
+# Synchronize the privileged helper and tty1 lifecycle hook on existing
+# appliances; normal updates must receive these changes without reinstalling.
+if [[ -f /etc/systemd/system/getty@tty1.service.d/autologin.conf ]]; then
+  install -o root -g root -m 0755 "$APP_DIR/deploy/pi-player-system" /usr/local/sbin/pi-player-system
+  install -o root -g root -m 0755 "$APP_DIR/deploy/kiosk-session-cleanup.sh" /usr/local/sbin/pi-player-kiosk-cleanup
+  if ! grep -Fq 'ExecStopPost=/usr/local/sbin/pi-player-kiosk-cleanup' /etc/systemd/system/getty@tty1.service.d/autologin.conf; then
+    printf '\nExecStopPost=/usr/local/sbin/pi-player-kiosk-cleanup\n' >> /etc/systemd/system/getty@tty1.service.d/autologin.conf
+  fi
+  systemctl daemon-reload
+fi
 # Reload the appliance kiosk after a successful update or rollback so Chromium
 # loads the frontend that matches the verified backend. The tty1 -> labwc
 # session is the sole kiosk owner; pi-player-kiosk.service remains unused.

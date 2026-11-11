@@ -11,7 +11,7 @@ w.fetch=async p=>({ok:true,status:200,text:async()=>JSON.stringify(p==='/api/ass
 let mutations=0;const obs=new w.MutationObserver(rs=>mutations+=rs.length);obs.observe(w.document.body,{childList:true,subtree:true});
 for(const file of scripts){const s=w.document.createElement('script');s.textContent=fs.readFileSync(root+'/static/'+file,'utf8');w.document.body.appendChild(s);}
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
-(async()=>{await wait(600);const first=mutations;await wait(300);assert.equal(mutations,first,'Full admin did not settle');w.document.querySelector('[data-tab="content"]').click();assert.equal(w.document.querySelector('#tab-content').classList.contains('hidden'),false);w.document.querySelector('#refresh-assets').click();await wait(400);const second=mutations;await wait(300);assert.equal(mutations,second,'Refresh did not settle');assert.equal(w.document.querySelectorAll('script').length,3);
+(async()=>{await wait(600);const first=mutations;await wait(300);assert.equal(mutations,first,'Full admin did not settle');w.document.querySelector('[data-tab="content"]').click();assert.equal(w.document.querySelector('#tab-content').classList.contains('hidden'),false);w.document.querySelector('#refresh-assets').click();await wait(400);const second=mutations;await wait(300);assert.equal(mutations,second,'Refresh did not settle');assert.ok(w.document.querySelectorAll('script').length>=scripts.length,'Expected admin script modules present');
   assert.ok(!scripts.some(file=>/video-ui|playlist-timer|image-mode/.test(file)));
   assert.equal(w.document.querySelector('[data-add-item]'),null,'Manual playlist add UI must remain removed');
   const video=assets.find(a=>a.type==='video');

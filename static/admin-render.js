@@ -13,7 +13,7 @@ function assetDetails(asset) {
   return result;
 }
 function assetEditControls(asset) {
-  if(asset.type==='pdf')return `<p>${asset.pdf_page_count||'?'} page(s)</p><label>Seconds per page<input data-asset-edit-pdf-seconds type="number" min="1" max="86400" value="${asset.pdf_page_seconds||10}"></label>`;
+  if(asset.type==='pdf')return `<p>${asset.pdf_page_count||'?'} page(s)</p><label>Seconds per page<input data-asset-edit-pdf-seconds type="number" min="1" max="86400" value="${asset.pdf_page_seconds||10}"></label><label><input data-asset-edit-pdf-once type="checkbox" ${asset.pdf_play_once?'checked':''}> Play all pages once</label>`;
   const modes=asset.type==='website'?['embed','direct']:['fit','fill','stretch'];
   let html=`<label>Display mode<select data-asset-edit-display-mode>${modeOptions(asset.display_mode||modes[0],modes)}</select></label>`;
   if(asset.type==='video')html+=`<label><input type="checkbox" data-video-muted ${asset.video_muted?'checked':''}> Muted</label><label><input type="checkbox" data-video-loop ${asset.video_loop?'checked':''}> Loop video for the playlist slot</label>`;
