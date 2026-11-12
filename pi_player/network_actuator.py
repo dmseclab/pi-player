@@ -84,7 +84,8 @@ class WiredActuator:
         expected = {"connection.type": "802-3-ethernet",
                     "connection.interface-name": "eth0",
                     "connection.autoconnect": "no",
-                    "ipv4.method": "auto"}
+                    "ipv4.method": "auto",
+                    "ipv4.addresses": ""}
         for field, value in expected.items():
             if self.field(profile, field) != value:
                 raise SafetyError("Primary profile not explicitly managed DHCP Ethernet")
@@ -98,11 +99,17 @@ class WiredActuator:
                     "ipv4.method": "manual",
                     "ipv4.addresses": ETHERNET_FALLBACK,
                     "ipv4.never-default": "yes",
+                    "ipv4.may-fail": "no",
+                    "ipv4.dad-timeout": "3000",
                     "ipv4.gateway": "",
                     "ipv4.dns": "",
                     "ipv6.method": "disabled"}
         for field, value in expected.items():
-            if self.field(FALLBACK_UUID, field) != value:
+            actual = self.field(FALLBACK_UUID, field)
+            # nmcli may display the numeric DAD timeout with its unit.
+            if field == "ipv4.dad-timeout":
+                actual = actual.removesuffix(" ms")
+            if actual != value:
                 raise SafetyError("Unexpected fallback profile configuration")
 
     def assert_fallback_safe(self, primary):
@@ -162,12 +169,29 @@ class WiredActuator:
         if (s.carrier is not True or not s.wifi_disabled or s.active_uuid != FALLBACK_UUID
                 or s.ipv4_addresses != (ETHERNET_FALLBACK,) or s.default_route):
             raise SafetyError("Fallback not active or unsafe to restore")
+        # Retain the owned fallback profile until primary DHCP is verified.
+        try:
+            self.nm("--wait", "30", "connection", "up", "uuid", primary, "ifname", "eth0")
+            s = self.observe()
+            if (s.active_uuid != primary or not s.ipv4_addresses
+                    or s.carrier is not True or not s.wifi_disabled):
+                raise SafetyError("Primary DHCP retry unsuccessful")
+        except Exception as exc:
+            # Recover fallback only if no new IPv4 or foreign profile appeared.
+            s = self.observe()
+            if (s.carrier is True and s.wifi_disabled
+                    and s.active_uuid in (None, primary) and not s.ipv4_addresses
+                    and not s.default_route):
+                self.assert_fallback_safe(primary)
+                self.nm("--wait", "30", "connection", "up", "uuid", FALLBACK_UUID, "ifname", "eth0")
+                restored = self.observe()
+                if (restored.active_uuid != FALLBACK_UUID
+                        or restored.ipv4_addresses != (ETHERNET_FALLBACK,)
+                        or restored.default_route or restored.carrier is not True
+                        or not restored.wifi_disabled):
+                    raise SafetyError("Fallback restoration read-back failed") from exc
+            raise SafetyError("Primary DHCP retry failed; reobserve before further action") from exc
         self.nm("connection", "delete", "uuid", FALLBACK_UUID)
-        self.nm("--wait", "30", "connection", "up", "uuid", primary, "ifname", "eth0")
-        s = self.observe()
-        if (s.active_uuid != primary or not s.ipv4_addresses
-                or s.carrier is not True or not s.wifi_disabled):
-            raise SafetyError("Primary DHCP retry unsuccessful")
         return s
 
 
