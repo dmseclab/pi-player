@@ -1,0 +1,28 @@
+# Candidate only: not installed or enabled by install/update.
+# The root-owned guard is intentionally a mandatory prerequisite and is
+# not yet installed. Never remove the guard to make the unit start.
+[Unit]
+Description=Pi Player isolated hotspot DHCP (candidate)
+After=NetworkManager.service
+Requires=NetworkManager.service
+BindsTo=sys-subsystem-net-devices-wlan0.device
+After=sys-subsystem-net-devices-wlan0.device
+PartOf=pi-player-network.service
+
+[Service]
+Type=exec
+RuntimeDirectory=pi-player-hotspot-dhcp
+RuntimeDirectoryMode=0755
+ExecStartPre=/usr/local/libexec/pi-player-network/verify-hotspot-dhcp
+ExecStartPre=/usr/bin/install -d -o nobody -g nogroup -m 0750 /run/pi-player-hotspot-dhcp/leases
+ExecStartPre=/usr/sbin/dnsmasq --test --conf-file=/etc/pi-player/network/hotspot-dhcp.conf
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/etc/pi-player/network/hotspot-dhcp.conf
+Restart=no
+TimeoutStartSec=15
+TimeoutStopSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/run/pi-player-hotspot-dhcp
+PrivateTmp=yes
+# No [Install] section: the controller alone owns the service lifecycle.
