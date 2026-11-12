@@ -23,6 +23,9 @@ class WiredRole(str, Enum):
 class Action(str, Enum):
     HOLD = "hold"
     BLOCK_UPLINKS = "block-uplinks"
+    ALLOW_WIRED = "allow-wired-only"
+    ALLOW_CLIENT = "allow-client-only"
+    RETRY_CLIENT = "retry-client"
     STOP_HOTSPOT_DHCP = "stop-hotspot-dhcp"
     STOP_WIRELESS = "stop-wireless"
     STOP_WIRED = "stop-wired"
@@ -95,6 +98,8 @@ def plan(config: Config, s: Snapshot) -> Plan:
         if s.wireless != WirelessRole.OFF:
             return p(Action.STOP_WIRELESS, "interlock not verified or carrier unknown")
         return p(Action.HOLD, "await verified interlock and carrier")
+    if s.wireless == WirelessRole.HOTSPOT and not s.hotspot_isolated:
+        return p(Action.STOP_WIRELESS, "hotspot isolation lost")
     # Cable insertion must never enable wired traffic until the client is down.
     if s.wireless == WirelessRole.CLIENT and (s.carrier or s.wired != WiredRole.OFF):
         if not s.uplinks_blocked:
@@ -107,6 +112,8 @@ def plan(config: Config, s: Snapshot) -> Plan:
         return p(Action.STOP_WIRELESS, "client no longer permitted")
 
     if s.carrier:
+        if s.wired != WiredRole.OFF and s.uplinks_blocked:
+            return p(Action.ALLOW_WIRED, "client stopped; wired gate only")
         if s.wired == WiredRole.OFF:
             return p(Action.START_PRIMARY, "carrier present; primary wired profile first")
         if s.wired == WiredRole.FALLBACK:
@@ -118,7 +125,11 @@ def plan(config: Config, s: Snapshot) -> Plan:
               and s.dhcp_elapsed >= ETHERNET_DHCP_TIMEOUT and not s.fallback_conflict):
             return p(Action.START_FALLBACK, "DHCP expired; duplicate-address check required")
     elif s.wired != WiredRole.OFF:
+        if not s.uplinks_blocked:
+            return p(Action.BLOCK_UPLINKS, "carrier removed; close gate before wired teardown")
         return p(Action.STOP_WIRED, "carrier absent; remove wired profile before client")
+    elif s.wireless == WirelessRole.CLIENT and s.uplinks_blocked:
+        return p(Action.ALLOW_CLIENT, "wired profile stopped; client gate only")
 
     wired_ok = s.carrier and (
         (s.wired == WiredRole.PRIMARY and s.primary_address)
@@ -145,8 +156,12 @@ def plan(config: Config, s: Snapshot) -> Plan:
 
     if target == WirelessRole.HOTSPOT and not config.hotspot_credentials_valid:
         target = WirelessRole.OFF
-    if s.wireless == WirelessRole.HOTSPOT and not s.hotspot_isolated:
-        return p(Action.STOP_WIRELESS, "hotspot isolation lost")
+    if (s.wireless == WirelessRole.HOTSPOT and not s.carrier and config.wifi_configured
+            and mode == HotspotMode.RECOVERY and wifi_exhausted
+            and s.retry_safe and s.retry_elapsed >= RETRY_DELAY):
+        if s.hotspot_dhcp_running:
+            return p(Action.STOP_HOTSPOT_DHCP, "stop DHCP before bounded client retry")
+        return p(Action.RETRY_CLIENT, "safe recovery retry; stop AP before resetting client failure")
     if s.wireless == WirelessRole.HOTSPOT and target == WirelessRole.CLIENT:
         # Recovery stays available while an administrator is connected. Retry
         # failure state must be reset by actuator only after safe backoff.
