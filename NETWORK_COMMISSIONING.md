@@ -231,8 +231,8 @@ verify the lab NetworkManager accepts it before live profile loading.
 `pi_player/network_gate_verify.py` reads the complete live nft ruleset using
 stateless output and numeric priorities, and compares ordered lines with the
 expected policy. Missing/extra rules, changed chain policies/hooks, another
-table or unreadable kernel state fail closed. Only whitespace and blank lines
-are normalized. This deliberately strict comparison may reject a semantically
+table or unreadable kernel state fail closed. Whitespace, blank lines and the equivalent one-line/two-line base-chain
+policy declaration are normalized; rule order and contents remain strict. This deliberately strict comparison may reject a semantically
 equivalent ruleset if nft renders it differently; verify against the actual
 lab nft version before use. It assumes a dedicated appliance with no
 competing firewall manager. It does not verify other packet filtering systems,
@@ -292,3 +292,25 @@ packet-path or cable-reconnection acceptance.
 4. Secure credential provisioning/storage/reset and authenticated setup/settings.
 5. Recovery mode retries and application-level isolation.
 6. Integration tests, reboot and extended soak acceptance before main promotion.
+
+## End-of-day checkpoint — 2026-11-12
+
+- Lab: pi-player, production Construction untouched; main remains 1f865a2.
+- 94 network tests passed on b6449a8 after correcting the guard test mocks.
+- Earlier lab checks: all four nft syntax checks, dnsmasq 2.91 config syntax,
+  offline client/AP keyfile validation, live wired/wireless observers passed.
+  No live firewall or wireless profiles installed; DHCP port 67 not listening.
+- Isolated namespace read-back stopped at closed mode because nft 1.1.3
+  combines the base-chain hook declaration and policy on one line. The
+  output showed the intended closed rules. The namespace exited; no host
+  network changes were requested. Normalization and a regression test are
+  committed, but not yet tested on the Pi (expect 95 tests).
+- Resume: pull development, run all network tests, repeat all four isolated
+  read-back checks and tampering test, verify host firewall unchanged.
+  If nft canonicalizes additional expressions, handle only proven equivalent
+  formatting; do not loosen policy checks. Then proceed with actual profile
+  provisioning and root-owned controller integration. Do not deploy/update,
+  install the DHCP unit, or modify live network configuration before acceptance.
+- Physical Ethernet fallback and cable-reconnection acceptance remain pending.
+  Continue the playback soak independently; no new playback conclusion is
+  established by these network tests.
