@@ -105,6 +105,31 @@ lifecycle and an exclusive root-owned actuator are still required. These
 rules do not by themselves prevent a transient Wi-Fi association when a cable
 is inserted; their purpose is to prevent simultaneous client data paths.
 
+### Candidate wired actuator (phase 4)
+
+`pi_player/network_actuator.py` provides a read-only runtime observer and
+candidate NetworkManager methods for a future locked root-owned service.
+Inspection is safe over the active SSH session:
+
+    python3 -m pi_player.network_actuator --inspect
+
+Fallback activation requires the caller to have verified the exclusive wired
+gate and 30-second DHCP timeout. The primary profile must be explicitly bound
+to eth0, DHCP-only and non-autoconnecting. The actuator refuses a healthy
+address, existing default route, unknown carrier, active Wi-Fi radio,
+foreign profile, conflicting subnet or existing fallback UUID. It creates an
+in-memory fallback profile with duplicate address detection, rechecks before
+activation, and verifies the resulting address and route. A failed DHCP retry
+attempts to restore the fallback only when the current observations permit it.
+Failures must be latched and reconciled by the future controller.
+
+The current lab profile has not been converted to controller ownership.
+No CLI for mutation is exposed; the candidate methods are only exercised with
+mocked subprocesses. The gate and safe-retry inputs are caller assertions,
+not independent proof of kernel state or session absence. Full root service
+integration, lock ownership, gate read-back, profile provisioning and actual
+isolated-cable acceptance remain mandatory before live use.
+
 ### Privileged actuator contract (not integrated)
 
 - Root-owned service and executable outside the application-owned runtime.
