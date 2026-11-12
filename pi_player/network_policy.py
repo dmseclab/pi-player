@@ -2,8 +2,10 @@
 from dataclasses import dataclass
 from enum import Enum
 import secrets
+import string
 
 HOTSPOT_SSID = "pi-player-local"
+HOTSPOT_PASSWORD_LENGTH = 8
 HOTSPOT_ADDRESS = "10.42.0.1/24"
 HOTSPOT_DHCP_START = "10.42.0.2"
 HOTSPOT_DHCP_END = "10.42.0.3"
@@ -80,12 +82,16 @@ def decide(facts: NetworkFacts) -> NetworkDecision:
 
 
 def generate_hotspot_password() -> str:
-    """24 hexadecimal characters / 96 random bits; never log the returned value."""
-    return secrets.token_hex(12)
+    """Eight random alphanumeric characters, including a letter and digit."""
+    alphabet = string.ascii_letters + string.digits
+    while True:
+        password = "".join(secrets.choice(alphabet) for _ in range(HOTSPOT_PASSWORD_LENGTH))
+        if any(c.isalpha() for c in password) and any(c.isdigit() for c in password):
+            return password
 
 
 def validate_hotspot_credentials(ssid: str, password: str) -> None:
     if not 1 <= len(ssid.encode("utf-8")) <= 32 or any(ord(c) < 32 or ord(c) == 127 for c in ssid):
         raise ValueError("Invalid hotspot SSID")
-    if not 12 <= len(password) <= 63 or any(not 32 <= ord(c) <= 126 for c in password):
-        raise ValueError("Hotspot password must contain 12–63 printable ASCII characters")
+    if not 8 <= len(password) <= 63 or any(not 32 <= ord(c) <= 126 for c in password):
+        raise ValueError("Hotspot password must contain 8–63 printable ASCII characters")
