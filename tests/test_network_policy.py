@@ -63,10 +63,14 @@ class NetworkPolicyTests(unittest.TestCase):
 
     def test_credentials(self):
         first, second = generate_hotspot_password(), generate_hotspot_password()
-        self.assertRegex(first, r"^[0-9a-f]{24}$")
+        self.assertRegex(first, r"^[A-Za-z0-9]{8}$")
         self.assertNotEqual(first, second)
+        for password in (first, second):
+            self.assertRegex(password, r"[A-Za-z]")
+            self.assertRegex(password, r"[0-9]")
+        validate_hotspot_credentials(HOTSPOT_SSID, "LongerCustomPassword123")
         validate_hotspot_credentials(HOTSPOT_SSID, first)
-        for ssid, password in [("", first), ("a"*33, first), ("x\n", first), ("ok", ""), ("ok", "a"*64)]:
+        for ssid, password in [("", first), ("a"*33, first), ("x\n", first), ("ok", ""), ("ok", "a"*7), ("ok", "a"*64)]:
             with self.assertRaises(ValueError):
                 validate_hotspot_credentials(ssid, password)
         self.assertEqual(HOTSPOT_LEASE_SECONDS, 3600)
