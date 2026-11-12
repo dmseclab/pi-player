@@ -6,6 +6,7 @@ nftables tables. This is deliberately strict; an unknown nft output format
 fails closed rather than approximating rule equivalence.
 """
 import argparse
+import re
 import subprocess
 import sys
 
@@ -17,7 +18,20 @@ NFT = "/usr/sbin/nft"
 def canonical_lines(text):
     # Compare rule boundaries and order, not a bag of tokens. nft -s omits
     # counters and -y renders numeric priorities. Only formatting is ignored.
-    return tuple(" ".join(line.split()) for line in text.splitlines() if line.strip())
+    lines = []
+    for raw in text.splitlines():
+        line = " ".join(raw.split())
+        if not line:
+            continue
+        # nft 1.1.3 prints the base-chain declaration and policy on a
+        # single line even when input uses two. Normalize only this exact
+        # declaration form, preserving every rule and its ordering.
+        match = re.fullmatch(r"(type filter hook [^;]+;) (policy (?:accept|drop);)", line)
+        if match:
+            lines.extend(match.groups())
+        else:
+            lines.append(line)
+    return tuple(lines)
 
 
 def expected_ruleset(mode):
