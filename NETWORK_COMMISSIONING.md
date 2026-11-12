@@ -156,7 +156,9 @@ caller assertion. The current wired fallback actuator deliberately requires
 the radio to be off; combined fallback/isolated AP transitions need further
 integration. Client profile support here is personal WPA-PSK only; enterprise
 802.1X is out of this checkpoint. Dedicated DHCP service lifecycle is staged below; regulatory domain
-persistence, profile creation and secure password storage remain unimplemented. No actual administration access on the hotspot is allowed.
+persistence and live profile provisioning remain unimplemented. The private
+credential store and profile renderer are staged below. No actual
+administration access on the hotspot is allowed.
 
 ### Candidate DHCP lifecycle (phase 6)
 
@@ -189,6 +191,40 @@ This checks syntax only. Unit tests simulate service and AP transitions; they
 do not establish that the service can start under systemd sandboxing or that
 DHCP traffic is isolated in the live kernel. Those require physical testing.
 No real management port is exposed.
+
+### Candidate credential store and profile rendering (phase 7)
+
+`pi_player/network_credentials.py` stages a versioned, root-private credential
+record outside the application runtime and database, under
+`/etc/pi-player/network/credentials/wireless.json`. The directory must be
+root-owned 0700, the file root-owned 0600; the store rejects symlinks,
+hardlinked records, unsafe permissions and invalid schemas. Provisioning
+generates the agreed eight-character random hotspot password once. Ordinary
+provisioning never changes an existing password. Explicit regeneration
+preserves the SSID and saved client settings. Writes use a private temporary
+file, fsync and atomic replacement; a failed or corrupt record is not reset
+silently. The controller must serialize operations under its exclusive lock
+and verify the entire parent directory path is trusted.
+
+Credentials are access-controlled, not encrypted at rest. A root user or a
+physical attacker with the SD card can read them. Keep these files and rendered
+profiles out of normal application backups, Git, status output and logs.
+The only public status representation excludes passwords. Do not use
+dataclasses.asdict on the private record in an API response.
+
+The renderer produces non-autoconnecting NetworkManager keyfiles for the
+managed hotspot and a WPA2 personal DHCP client. SSIDs are UTF-8 byte lists
+and the key uses standard WPA2 PBKDF2 derivation; the derived PSK is also a
+secret. Both profiles disable IPv6 and WPS. Static client addressing and
+enterprise Wi-Fi are not rendered by this checkpoint. Profile installation,
+runtime verification, existing appliance migration, recovery of interrupted
+profile changes, authenticated credential reveal/reset and factory reset
+integration are still required.
+
+No live credential files or profiles are created by pulling this checkpoint.
+Use only synthetic credentials for offline nmcli validation, with its output
+discarded. The decimal-byte SSID list is a legacy keyfile representation;
+verify the lab NetworkManager accepts it before live profile loading.
 
 ### Privileged actuator contract (not integrated)
 
