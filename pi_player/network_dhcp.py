@@ -4,6 +4,8 @@ Only --render-config is exposed as a CLI. The future root-owned controller
 must hold the transition lock and provide an independent gate verifier.
 """
 import argparse
+import os
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +33,25 @@ def render_service_config():
     )
 
 
+def verify_installed_config():
+    """Require the exact generated config in a root-owned protected location."""
+    path = Path(CONFIG_PATH)
+    try:
+        for parent in (path.parent.parent, path.parent):
+            st = parent.lstat()
+            if not stat.S_ISDIR(st.st_mode) or st.st_uid != 0 or st.st_mode & 0o022:
+                return False
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "r", encoding="utf-8") as stream:
+            st = os.fstat(stream.fileno())
+            if not stat.S_ISREG(st.st_mode) or st.st_uid != 0 or st.st_mode & 0o022:
+                return False
+            expected = render_service_config()
+            return stream.read(len(expected) + 1) == expected
+    except (OSError, UnicodeError):
+        return False
+
+
 def host_isolation_ready():
     """Conservative host preflight; not a substitute for nft read-back."""
     try:
@@ -56,7 +77,8 @@ class ServiceState:
 
     @property
     def running(self):
-        return self.load == "loaded" and self.active == "active" and self.sub == "running" and self.main_pid > 0
+        return (self.load == "loaded" and self.active == "active" and self.sub == "running"
+                and self.main_pid > 0 and self.control_pid == 0 and self.job in ("", "0"))
 
     @property
     def stopped(self):
@@ -70,10 +92,11 @@ class ServiceState:
 
 class HotspotDHCP:
     def __init__(self, *, wireless=None, gate_verified=lambda mode: False,
-                 host_ready=host_isolation_ready):
+                 host_ready=host_isolation_ready, config_verified=verify_installed_config):
         self.wireless = wireless if wireless is not None else WirelessActuator()
         self.gate_verified = gate_verified
         self.host_ready = host_ready
+        self.config_verified = config_verified
 
     def status(self):
         raw = self.wireless.run(SYSTEMCTL, "show", UNIT,
@@ -92,6 +115,8 @@ class HotspotDHCP:
     def assert_safe(self):
         if self.gate_verified(Gate.HOTSPOT) is not True or self.host_ready() is not True:
             raise SafetyError("Hotspot isolation not verified")
+        if self.config_verified() is not True:
+            raise SafetyError("Installed DHCP config not verified")
         s = self.wireless.observe_wireless()
         if (not s.radio_enabled or s.device_state != 100
                 or s.active_uuid != HOTSPOT_UUID or s.role != WirelessRole.HOTSPOT
