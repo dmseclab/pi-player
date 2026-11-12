@@ -21,6 +21,13 @@ class GateReadbackTests(unittest.TestCase):
         self.assertTrue(matches_ruleset(Gate.HOTSPOT, "\n\n".join(
             "\t" + line.strip() for line in rules.splitlines())))
 
+    def test_nft_113_combines_chain_declaration_and_policy(self):
+        rules = expected_ruleset(Gate.CLOSED)
+        for policy in ("accept", "drop"):
+            rules = rules.replace(";\n        policy " + policy + ";", "; policy " + policy + ";")
+        self.assertTrue(matches_ruleset(Gate.CLOSED, rules))
+        self.assertFalse(matches_ruleset(Gate.CLOSED, rules.replace("policy drop;", "policy accept;", 1)))
+
     def test_missing_or_modified_chain_rejected(self):
         rules = expected_ruleset(Gate.WIRED)
         for altered in ("", rules.replace("policy drop;", "policy accept;", 1),
