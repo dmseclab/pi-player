@@ -91,7 +91,17 @@ STAGE=profile-create
 printf '\n===== CREATE TEMPORARY PROFILE =====\n'
 # Root-only, volatile NetworkManager keyfile. PSK never appears in argv or journal.
 mkdir -p /run/NetworkManager/system-connections
-PSK=$(python3 -c 'import secrets; print(secrets.token_hex(12))')
+PSK=$(python3 -I - <<'PY'
+import secrets
+import string
+alphabet = string.ascii_letters + string.digits
+while True:
+    password = "".join(secrets.choice(alphabet) for _ in range(8))
+    if any(c.isalpha() for c in password) and any(c.isdigit() for c in password):
+        print(password)
+        break
+PY
+)
 cat > "$KEYFILE" <<EOF
 [connection]
 id=$PROFILE
