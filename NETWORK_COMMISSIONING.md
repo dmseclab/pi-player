@@ -86,7 +86,26 @@ fallback/client recovery retries unless the actuator can positively establish
 that no active commissioning session will be interrupted. It does not infer
 network health from Internet connectivity.
 
-### Privileged actuator contract (not implemented)
+### Candidate kernel gates (phase 3)
+
+`pi_player/network_gate.py` renders four complete nftables transactions: closed,
+wired-only, client-only, and isolated hotspot. Both owned tables are replaced
+atomically. Netdev ingress/egress drops the nonselected interface at frame
+level, including ARP, rather than relying on routing metrics. The hotspot
+candidate still exposes only the harmless test service on port 18000 and
+IPv4 DHCP; forwarding on either managed interface is denied in all modes.
+The module also renders the restricted wlan0-only DHCP configuration.
+
+The primitive has no caller in the installed application. Before considering
+live use, run the network unit tests, then validate each generated transaction
+with `nft -c -f -` on the Pi. Do not use `nft -f -` without the check flag on
+an active remote connection: closed/client gates would interrupt Ethernet.
+Read-back verification, bridge/namespace checks, reboot ordering, DHCP service
+lifecycle and an exclusive root-owned actuator are still required. These
+rules do not by themselves prevent a transient Wi-Fi association when a cable
+is inserted; their purpose is to prevent simultaneous client data paths.
+
+### Privileged actuator contract (not integrated)
 
 - Root-owned service and executable outside the application-owned runtime.
   Use fixed validated interfaces/profile UUIDs and a lock around transitions.
