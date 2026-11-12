@@ -9,7 +9,6 @@ from dataclasses import asdict, dataclass
 import ipaddress
 import json
 import time
-import uuid
 
 from .network_actuator import IP, SafetyError, WiredActuator
 from .network_gate import Gate
@@ -101,10 +100,22 @@ class WirelessActuator(WiredActuator):
             raise SafetyError("Client must use DHCP or static addressing, never shared mode")
         return profile
 
+    def verify_owned_profiles(self):
+        profiles = self.nm("-t", "-f", "UUID,TYPE", "connection", "show")
+        for line in profiles.splitlines():
+            profile, _, kind = line.partition(":")
+            if kind not in ("wifi", "802-11-wireless"):
+                continue
+            if profile not in (CLIENT_UUID, HOTSPOT_UUID):
+                raise SafetyError("Unmanaged wireless profile exists")
+            if self.field(profile, "connection.autoconnect") != "no":
+                raise SafetyError("Independent wireless autoconnect enabled")
+
     def assert_ready_to_start(self, role):
         gate = Gate.HOTSPOT if role == WirelessRole.HOTSPOT else Gate.CLIENT
         if self.gate_verified(gate) is not True or self.dhcp_stopped() is not True:
             raise SafetyError("Wireless gate or stopped hotspot DHCP not verified")
+        self.verify_owned_profiles()
         wired = self.observe()
         wireless = self.observe_wireless()
         if wireless.active_uuid is not None or wireless.ipv4_addresses or wireless.default_route:
@@ -134,8 +145,7 @@ class WirelessActuator(WiredActuator):
             raise SafetyError("Wireless role not authorized")
         profile = self.validate_profile(role)
         self.assert_ready_to_start(role)
-        # Future provisioning must ensure no unmanaged/autoconnect profile can
-        # activate when the radio is enabled. No secret is passed on argv.
+        # No unmanaged/autoconnect profile is allowed. No secret on argv.
         try:
             self.nm("radio", "wifi", "on")
             self.wait_ready()
@@ -170,10 +180,12 @@ class WirelessActuator(WiredActuator):
         if self.dhcp_stopped() is not True:
             raise SafetyError("Stop hotspot DHCP before switching wireless role")
         self.nm("radio", "wifi", "off")
-        result = self.observe_wireless()
-        if result.radio_enabled or result.active_uuid or result.ipv4_addresses or result.default_route:
-            raise SafetyError("Wireless teardown not confirmed")
-        return result
+        for _ in range(10):
+            result = self.observe_wireless()
+            if not (result.radio_enabled or result.active_uuid or result.ipv4_addresses or result.default_route):
+                return result
+            self.sleep(1)
+        raise SafetyError("Wireless teardown not confirmed")
 
 
 def main():
