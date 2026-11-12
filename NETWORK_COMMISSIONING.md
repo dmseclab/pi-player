@@ -21,8 +21,11 @@ Do not deploy these changes to a production appliance.
 - Hotspot modes: disabled (default), permanent, recovery. A hotspot and
   Ethernet can coexist, but never a Wi-Fi client and another active uplink.
 - Default SSID pi-player-local; configurable to avoid duplicate SSIDs.
-  Unique 24-character random password per appliance; no open/shared default
-  password. Generate on provisioning/reset; retain across updates. Authenticated
+  Unique eight-character random alphanumeric password per appliance (letters
+  and digits, mixed case); no open/shared default password. Eight is the
+  WPA2 passphrase minimum and is weaker than the original 24-character
+  proposal. Permit longer administrator-selected passwords for higher-security
+  deployments. Generate on provisioning/reset; retain across updates. Authenticated
   reveal/change/regenerate via wired setup/settings; no TV display, ordinary
   logs, unauthenticated status, playlist exports or Git. Use direct cable or
   trusted protected management transport for credential retrieval.
