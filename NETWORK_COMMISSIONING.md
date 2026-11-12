@@ -61,8 +61,11 @@ verify Ethernet and playback remain healthy.
 Wired fallback must be tested separately using a physically isolated direct
 cable and local console or alternate management path. Do not disconnect an
 active remote SSH session for the test. No DHCP server on the wired segment.
-Automated fallback profile, conflict detection and DHCP retry transitions are
-not implemented by this checkpoint.
+After Ethernet DHCP has failed on that isolated segment, run from local console:
+  sudo bash deploy/lab-ethernet-fallback-poc.sh
+The temporary manual profile performs IPv4 duplicate address detection and
+uses no default route; it is removed after the test. Automated fallback and
+DHCP retry transitions are not implemented by this checkpoint.
 
 ## Remaining implementation gates
 
