@@ -153,7 +153,8 @@ class Handler(BaseHTTPRequestHandler):
 HTTPServer(("10.42.0.1",18000),Handler).serve_forever()
 '
 sleep 2
-systemctl is-active "$DHCP.service" "$HTTP.service"
+systemctl is-active "$DHCP.service"
+systemctl is-active "$HTTP.service"
 ip -br address
 ip -4 route
 nft list table inet "$TABLE"
