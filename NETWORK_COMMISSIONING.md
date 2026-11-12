@@ -130,6 +130,35 @@ not independent proof of kernel state or session absence. Full root service
 integration, lock ownership, gate read-back, profile provisioning and actual
 isolated-cable acceptance remain mandatory before live use.
 
+### Candidate wireless actuator (phase 5)
+
+`pi_player/network_wireless.py` provides a read-only wireless observer and
+candidate Wi-Fi client/AP activation and teardown methods:
+
+    python3 -m pi_player.network_wireless --inspect
+
+The observer prints radio state, NetworkManager device state, active UUID,
+role, addresses and default route only; it never requests PSKs. The candidate
+accepts only the two managed, non-autoconnecting wireless profiles and rejects
+foreign wireless profiles. Client activation requires known absent Ethernet
+carrier, no active wired profile/address/route, and verified client-only
+gate. Checks repeat after radio readiness and activation. AP activation
+requires a verified hotspot gate and stopped DHCP, no overlapping subnet,
+WPA2/CCMP, WPS disabled, explicit AP isolation and fixed local address
+without a default route. Kernel AP mode is verified with iw. Activation
+failure attempts to turn off the radio; teardown waits for observed shutdown.
+No profile passwords are passed on the command line.
+
+These methods are not called by a running service. They assume the caller
+owns the transition lock, provides independently verified gate and DHCP
+callbacks and has provisioned root-owned profiles; authorization is still a
+caller assertion. The current wired fallback actuator deliberately requires
+the radio to be off; combined fallback/isolated AP transitions need further
+integration. Client profile support here is personal WPA-PSK only; enterprise
+802.1X is out of this checkpoint. Dedicated DHCP service lifecycle, regulatory
+domain persistence, profile creation and secure password storage remain
+unimplemented. No actual administration access on the hotspot is allowed.
+
 ### Privileged actuator contract (not integrated)
 
 - Root-owned service and executable outside the application-owned runtime.
