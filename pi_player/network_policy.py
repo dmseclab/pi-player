@@ -52,6 +52,8 @@ def decide(facts: NetworkFacts) -> NetworkDecision:
     connection. Never start a DHCP server on Ethernet. Unknown carrier must be
     handled as a closed interlock by the caller, not coerced to False.
     """
+    if type(facts.ethernet_carrier) is not bool:
+        return NetworkDecision(WirelessRole.OFF, False, "unknown ethernet carrier")
     fallback = (
         facts.ethernet_carrier and facts.ethernet_dhcp
         and not facts.ethernet_has_address and facts.ethernet_dhcp_expired
