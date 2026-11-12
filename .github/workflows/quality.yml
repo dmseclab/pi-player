@@ -3,7 +3,7 @@ name: Pi Player Quality Gate
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, development]
 
 jobs:
   python-and-packaging:
@@ -20,7 +20,9 @@ jobs:
       - name: Python and shell syntax
         run: |
           python -m compileall -q pi_player
-          bash -n bootstrap-install.sh deploy/*.sh deploy/pi-player-system
+          for script in bootstrap-install.sh deploy/*.sh deploy/pi-player-system; do
+            bash -n "$script" || exit 1
+          done
       - name: Run Python unit tests with isolated runtime
         env:
           PI_PLAYER_DATA_DIR: ${{ runner.temp }}/pi-player-data
