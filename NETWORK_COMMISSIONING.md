@@ -175,8 +175,8 @@ to 10.42.0.2–10.42.0.3 for one hour. It does not log per-client DHCP events.
 `deploy/pi-player-hotspot-dhcp.service` is a staged unit with no Install
 section or automatic restart. It is NOT installed or enabled. It requires a
 future root-owned prestart guard at
-`/usr/local/libexec/pi-player-network/verify-hotspot-dhcp`; the guard is not
-implemented yet, so do not install or start the unit. A device binding does
+`/usr/local/libexec/pi-player-network/verify-hotspot-dhcp`; the guard module is staged but not installed or connected to that path,
+so do not install or start the unit. A device binding does
 not detect changes from AP mode to client mode; the future controller must
 stop and verify DHCP before a role change and continuously reconcile failure.
 
@@ -225,6 +225,31 @@ No live credential files or profiles are created by pulling this checkpoint.
 Use only synthetic credentials for offline nmcli validation, with its output
 discarded. The decimal-byte SSID list is a legacy keyfile representation;
 verify the lab NetworkManager accepts it before live profile loading.
+
+### Independent gate verification and DHCP guard (phase 8)
+
+`pi_player/network_gate_verify.py` reads the complete live nft ruleset using
+stateless output and numeric priorities, and compares ordered lines with the
+expected policy. Missing/extra rules, changed chain policies/hooks, another
+table or unreadable kernel state fail closed. Only whitespace and blank lines
+are normalized. This deliberately strict comparison may reject a semantically
+equivalent ruleset if nft renders it differently; verify against the actual
+lab nft version before use. It assumes a dedicated appliance with no
+competing firewall manager. It does not verify other packet filtering systems,
+network namespaces, tc/XDP or bridge membership by itself.
+
+The candidate DHCP prestart module `pi_player/network_guard.py` independently
+checks root identity and calls the existing AP/config/host preflight using
+this read-back verifier. It is not installed at the systemd unit's guard
+path. A root-owned package/launcher and controller lifecycle are still
+required. No secrets or raw errors are printed by the guard.
+
+Test generated rules in a disposable isolated network namespace using two
+new dummy interfaces named eth0 and wlan0. Never move the physical interfaces
+or apply the closed/client gate in the host namespace over SSH. The isolated
+namespace disappears at process exit. Verify all four read-backs and deliberate
+rule tampering; compare the host rules before/after. This is still not live
+packet-path or cable-reconnection acceptance.
 
 ### Privileged actuator contract (not integrated)
 
