@@ -1,7 +1,8 @@
 import subprocess
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, create_autospec
 
+from pi_player.network_dhcp import HotspotDHCP
 from pi_player.network_gate import Gate
 from pi_player.network_gate_verify import expected_ruleset, matches_ruleset, verify_gate, NFT
 from pi_player.network_guard import guard
@@ -57,19 +58,19 @@ class GateReadbackTests(unittest.TestCase):
 
 class DHCPGuardTests(unittest.TestCase):
     def test_requires_root(self):
-        factory = Mock()
+        factory = create_autospec(HotspotDHCP)
         self.assertFalse(guard(uid=lambda: 1000, factory=factory))
         factory.assert_not_called()
 
     def test_passes_independent_verifier(self):
-        factory = Mock()
+        factory = create_autospec(HotspotDHCP)
         verifier = Mock(return_value=True)
         self.assertTrue(guard(uid=lambda: 0, factory=factory, verifier=verifier))
         factory.assert_called_once_with(gate_verified=verifier)
         factory.return_value.assert_safe.assert_called_once_with()
 
     def test_guard_rejects_unsafe_or_unknown_state(self):
-        factory = Mock()
+        factory = create_autospec(HotspotDHCP)
         factory.return_value.assert_safe.side_effect = RuntimeError("unsafe")
         self.assertFalse(guard(uid=lambda: 0, factory=factory))
         self.assertFalse(guard(uid=lambda: 0, factory=Mock(side_effect=OSError("unavailable"))))
