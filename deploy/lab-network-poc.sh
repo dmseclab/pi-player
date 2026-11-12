@@ -40,8 +40,11 @@ KEYFILE="/run/NetworkManager/system-connections/$PROFILE.nmconnection"
 [[ ! -e "$KEYFILE" ]] || { rmdir "$WORK"; echo "Existing keyfile: abort"; exit 1; }
 RADIO=0; FW=0; TIMER=0; LOADED=0
 cleanup() {
+    trap - ERR
     set +e
-    if [[ $RADIO == 1 ]]; then nmcli radio wifi off; fi
+    if [[ $RADIO == 1 ]]; then
+        nmcli radio wifi off || echo "WARNING: radio disable command failed" >&2
+    fi
     systemctl stop "$HTTP.service" "$DHCP.service" 2>/dev/null
     if [[ $(nmcli radio wifi) == disabled ]]; then
         if [[ $LOADED == 1 ]]; then nmcli connection delete uuid "$UUID"; fi
@@ -150,7 +153,37 @@ STAGE=hotspot-activation
 printf '\n===== ACTIVATE HOTSPOT =====\n'
 RADIO=1
 nmcli radio wifi on
-nmcli --wait 30 con up uuid "$UUID" ifname wlan0
+STAGE=radio-readiness
+printf '\n===== WAIT FOR WLAN0 READINESS =====\n'
+ready=0
+for ((attempt=1; attempt<=30; attempt++)); do
+    state=$(nmcli -g GENERAL.STATE device show wlan0)
+    printf 'Attempt %02d: wlan0 state=%s\n' "$attempt" "$state"
+    # NM_DEVICE_STATE_DISCONNECTED=30: managed, ready for activation.
+    if [[ "$state" =~ ^30([[:space:]]|$) ]]; then
+        ready=1
+        break
+    fi
+    sleep 1
+done
+if [[ "$ready" != 1 ]]; then
+    echo "ERROR: wlan0 did not become available within 30 seconds" >&2
+    nmcli radio all
+    nmcli device status
+    rfkill list
+    iw reg get
+    journalctl -u NetworkManager --since "2 minutes ago" -n 40 --no-pager || true
+    exit 1
+fi
+STAGE=hotspot-activation
+if ! nmcli --wait 30 con up uuid "$UUID" ifname wlan0; then
+    echo "ERROR: hotspot activation failed after wlan0 became ready" >&2
+    nmcli device status
+    rfkill list
+    iw reg get
+    journalctl -u NetworkManager --since "2 minutes ago" -n 40 --no-pager || true
+    exit 1
+fi
 [[ $(sysctl -n net.ipv4.ip_forward) == 0 && $(sysctl -n net.ipv6.conf.all.forwarding) == 0 ]]
 STAGE=dhcp
 printf '\n===== START HOTSPOT DHCP =====\n'
