@@ -155,9 +155,40 @@ callbacks and has provisioned root-owned profiles; authorization is still a
 caller assertion. The current wired fallback actuator deliberately requires
 the radio to be off; combined fallback/isolated AP transitions need further
 integration. Client profile support here is personal WPA-PSK only; enterprise
-802.1X is out of this checkpoint. Dedicated DHCP service lifecycle, regulatory
-domain persistence, profile creation and secure password storage remain
-unimplemented. No actual administration access on the hotspot is allowed.
+802.1X is out of this checkpoint. Dedicated DHCP service lifecycle is staged below; regulatory domain
+persistence, profile creation and secure password storage remain unimplemented. No actual administration access on the hotspot is allowed.
+
+### Candidate DHCP lifecycle (phase 6)
+
+`pi_player/network_dhcp.py` generates the fixed dnsmasq configuration and
+provides start/stop/reconciliation candidates. It requires a verified active
+managed AP, exact address, no WLAN default route, known Ethernet carrier,
+independent firewall verification, disabled IP forwarding, neither managed
+interface enslaved to another device, and exact root-owned configuration.
+It checks these before and after service startup and requests shutdown on
+unsafe or unknown state. The dedicated config binds to wlan0 and explicitly
+excludes eth0, disables DNS, omits router/DNS DHCP options, and limits leases
+to 10.42.0.2–10.42.0.3 for one hour. It does not log per-client DHCP events.
+
+`deploy/pi-player-hotspot-dhcp.service` is a staged unit with no Install
+section or automatic restart. It is NOT installed or enabled. It requires a
+future root-owned prestart guard at
+`/usr/local/libexec/pi-player-network/verify-hotspot-dhcp`; the guard is not
+implemented yet, so do not install or start the unit. A device binding does
+not detect changes from AP mode to client mode; the future controller must
+stop and verify DHCP before a role change and continuously reconcile failure.
+
+Non-mutating configuration check on the lab Pi:
+
+    tmp=$(mktemp)
+    python3 -m pi_player.network_dhcp --render-config > "$tmp"
+    /usr/sbin/dnsmasq --test --conf-file="$tmp"
+    rm -f "$tmp"
+
+This checks syntax only. Unit tests simulate service and AP transitions; they
+do not establish that the service can start under systemd sandboxing or that
+DHCP traffic is isolated in the live kernel. Those require physical testing.
+No real management port is exposed.
 
 ### Privileged actuator contract (not integrated)
 
