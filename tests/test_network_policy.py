@@ -23,6 +23,12 @@ class NetworkPolicyTests(unittest.TestCase):
                                         hotspot_isolation_ready=ready)
                         self.assertNotEqual(decide(facts).wireless, WirelessRole.CLIENT)
 
+    def test_unknown_carrier_fails_closed(self):
+        facts = replace(self.base, ethernet_carrier=None, hotspot_mode=HotspotMode.PERMANENT,
+                        hotspot_credentials_valid=True, hotspot_isolation_ready=True)
+        self.assertEqual(decide(facts).wireless, WirelessRole.OFF)
+        self.assertFalse(decide(facts).ethernet_fallback)
+
     def test_dhcp_fallback_only_after_timeout(self):
         facts = replace(self.base, ethernet_has_address=False)
         self.assertFalse(decide(facts).ethernet_fallback)
