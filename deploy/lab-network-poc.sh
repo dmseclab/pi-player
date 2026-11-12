@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Explicit, temporary lab test only. Never invoked by installation or the API.
 set -Eeuo pipefail
+export LC_ALL=C
+STAGE=preflight
+trap 'rc=$?; printf "ERROR: stage=%s line=%s exit=%s\n" "$STAGE" "$LINENO" "$rc" >&2' ERR
 [[ $(id -u) == 0 && $(hostname -s) == pi-player ]] || { echo "Lab pi-player/root only"; exit 1; }
 MODE=$(printf '%s' "$*")
 [[ "$MODE" == "--hotspot" ]] || { echo "Usage: sudo bash deploy/lab-network-poc.sh --hotspot"; exit 2; }
@@ -55,6 +58,8 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
+STAGE=firewall
+printf '\n===== INSTALL ISOLATION FIREWALL =====\n'
 cat > "$WORK/firewall.nft" <<'EOF'
 table inet pi_player_hotspot_poc {
     chain input {
@@ -79,6 +84,8 @@ EOF
 nft -c -f "$WORK/firewall.nft"
 nft -f "$WORK/firewall.nft"
 FW=1
+STAGE=profile-create
+printf '\n===== CREATE TEMPORARY PROFILE =====\n'
 # Root-only, volatile NetworkManager keyfile. PSK never appears in argv or journal.
 mkdir -p /run/NetworkManager/system-connections
 PSK=$(python3 -c 'import secrets; print(secrets.token_hex(12))')
@@ -112,17 +119,41 @@ EOF
 chmod 600 "$KEYFILE"
 LOADED=1
 nmcli connection load "$KEYFILE"
-# Confirm profile fields before enabling the radio.
-[[ $(nmcli -g 802-11-wireless.mode con show uuid "$UUID") == ap ]]
-[[ $(nmcli -g 802-11-wireless.ap-isolation con show uuid "$UUID") == yes ]]
-[[ $(nmcli -g ipv4.method con show uuid "$UUID") == manual ]]
-[[ $(nmcli -g ipv6.method con show uuid "$UUID") == disabled ]]
+# Confirm profile fields before enabling the radio. AP isolation is a ternary,
+# not a boolean; nmcli can print true or 1 (true) depending on output mode.
+STAGE=profile-validation
+printf '\n===== VERIFY NON-SECRET PROFILE SETTINGS =====\n'
+check_setting() {
+    local field="$1" expected="$2" actual
+    actual=$(nmcli -g "$field" con show uuid "$UUID")
+    printf '%s: %s\n' "$field" "$actual"
+    if [[ "$actual" != "$expected" ]]; then
+        echo "ERROR: unexpected $field (expected $expected)" >&2
+        return 1
+    fi
+}
+check_setting 802-11-wireless.mode ap
+isolation=$(nmcli -g 802-11-wireless.ap-isolation con show uuid "$UUID")
+printf '802-11-wireless.ap-isolation: %s\n' "$isolation"
+case "$isolation" in
+    true|yes|1|"1 (true)"|"1 (yes)") ;;
+    *) echo "ERROR: AP isolation not explicitly enabled; aborting" >&2; exit 1 ;;
+esac
+check_setting ipv4.method manual
+check_setting ipv6.method disabled
+check_setting ipv4.never-default yes
+STAGE=safety-timer
+printf '\n===== ARM SAFETY TIMER =====\n'
 systemd-run --unit="$SAFETY" --on-active=12min "$(command -v nmcli)" radio wifi off
 TIMER=1
+STAGE=hotspot-activation
+printf '\n===== ACTIVATE HOTSPOT =====\n'
 RADIO=1
 nmcli radio wifi on
 nmcli --wait 30 con up uuid "$UUID" ifname wlan0
 [[ $(sysctl -n net.ipv4.ip_forward) == 0 && $(sysctl -n net.ipv6.conf.all.forwarding) == 0 ]]
+STAGE=dhcp
+printf '\n===== START HOTSPOT DHCP =====\n'
 install -d -o nobody -g nogroup -m 0750 "$WORK/leases"
 cat > "$WORK/dhcp.conf" <<EOF
 port=0
@@ -140,6 +171,8 @@ log-dhcp
 EOF
 dnsmasq --test --conf-file="$WORK/dhcp.conf"
 systemd-run --unit="$DHCP" --property=RuntimeMaxSec=660 "$(command -v dnsmasq)" --keep-in-foreground --conf-file="$WORK/dhcp.conf"
+STAGE=http
+printf '\n===== START TEST WEB SERVICE =====\n'
 systemd-run --unit="$HTTP" --property=User=nobody --property=RuntimeMaxSec=660 "$(command -v python3)" -c '
 from http.server import BaseHTTPRequestHandler, HTTPServer
 class Handler(BaseHTTPRequestHandler):
@@ -153,11 +186,13 @@ class Handler(BaseHTTPRequestHandler):
 HTTPServer(("10.42.0.1",18000),Handler).serve_forever()
 '
 sleep 2
+STAGE=service-validation
 systemctl is-active "$DHCP.service"
 systemctl is-active "$HTTP.service"
 ip -br address
 ip -4 route
 nft list table inet "$TABLE"
+STAGE=ready
 echo "HOTSPOT READY: pi-player-local / http://10.42.0.1:18000"
 printf 'Temporary password (private; do not copy into logs): %s\n' "$PSK" >/dev/tty
 unset PSK
@@ -165,4 +200,8 @@ echo "Press Enter to clean up, or automatic cleanup after 10 minutes."
 read -r -t 600 </dev/tty || true
 nft list table inet "$TABLE"
 # No client MAC addresses or password printed in diagnostic summary.
-echo "DHCP leases: $(wc -l < "$WORK/leases/dhcp.leases" 2>/dev/null || echo 0)"
+if [[ -f "$WORK/leases/dhcp.leases" ]]; then
+    echo "DHCP leases: $(wc -l < "$WORK/leases/dhcp.leases")"
+else
+    echo "DHCP leases: 0"
+fi
