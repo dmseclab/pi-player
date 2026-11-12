@@ -1,7 +1,8 @@
 # Network commissioning — development checkpoint
 
-This is a **lab-only phase 1**, not production-ready wireless management. The
-policy module is pure and is not wired to NetworkManager or the API yet.
+This is a **lab-only development checkpoint**, not production-ready wireless
+management. The policy and transition planner are pure and are not wired to
+NetworkManager or the API yet.
 The explicit hotspot proof of concept is not installed or invoked automatically.
 Do not deploy these changes to a production appliance.
 
@@ -69,6 +70,53 @@ After Ethernet DHCP has failed on that isolated segment, run from local console:
 The temporary manual profile performs IPv4 duplicate address detection and
 uses no default route; it is removed after the test. Automated fallback and
 DHCP retry transitions are not implemented by this checkpoint.
+
+## Transition planner (phase 2)
+
+`pi_player/network_controller.py` returns one action per observed snapshot.
+It never runs commands or writes network configuration. Its regression tests
+cover wired DHCP expiry, fallback conflict handling, unknown carrier,
+break-before-make, hotspot isolation and DHCP lifecycle, and bounded recovery
+retry. The test command is:
+
+    python3 -m unittest discover -s tests -p 'test_network*.py' -v
+
+The planner uses a proposed five-minute retry interval and defers elective
+fallback/client recovery retries unless the actuator can positively establish
+that no active commissioning session will be interrupted. It does not infer
+network health from Internet connectivity.
+
+### Privileged actuator contract (not implemented)
+
+- Root-owned service and executable outside the application-owned runtime.
+  Use fixed validated interfaces/profile UUIDs and a lock around transitions.
+  Never execute arbitrary application-supplied commands or source configuration.
+- Start with a verified kernel gate; disable independent connection
+  autoconnect for the managed profiles. The wired/client data path must be
+  mutually exclusive even if NetworkManager receives carrier events before
+  the controller. A polling planner alone cannot guarantee this.
+- BLOCK_UPLINKS closes both uplink data paths atomically without blocking the
+  isolated AP's permitted local traffic. ALLOW_WIRED / ALLOW_CLIENT opens
+  only the selected uplink after verifying opposite-role shutdown and fresh
+  carrier. START_PRIMARY / START_CLIENT must establish the correct exclusive
+  gate for DHCP before activation, then verify the resulting state.
+- START_FALLBACK replaces only the managed DHCP primary profile after timeout;
+  check overlapping routes and duplicate address detection, never advertise
+  DHCP from eth0. RESTORE_PRIMARY removes the fallback and retries DHCP
+  with bounded backoff. A failed fallback attempt must latch conflict/failure
+  until a fresh permitted retry; do not spin on a failing action.
+- INSTALL_HOTSPOT_ISOLATION verifies complete input, output and forwarding
+  restrictions (and no forwarding/NAT/bridge). START_HOTSPOT checks them
+  again immediately before activating the AP. START_HOTSPOT_DHCP must bind
+  to wlan0 and verify AP identity/address; stop it before switching roles.
+  RETRY_CLIENT stops AP and verifies DHCP stopped before resetting the
+  failure latch. Preserve an active recovery session during elective retries.
+- Reconcile observed results after each action; use monotonic timers,
+  bounded command timeouts and explicit error state. Recheck facts at action
+  execution, not only when planning. Keep the firewall closed on failure.
+- No real admin API over the AP until application-mediated OT access is
+  reviewed and tested. No auto-enabling service in install/update until
+  physical acceptance. The current lab test exposes only port 18000.
 
 ## Remaining implementation gates
 
