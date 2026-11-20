@@ -43,10 +43,9 @@ class AdapterTests(unittest.TestCase):
     def setup_player(self):
         player = MpvPlayer(asset_dir=self.assets)
         fake = FakeProcess()
-        uid = os.getuid() or 1001
-        # Tests run with a temporary directory owned by the real UID;
-        # when root, simulate a non-root runtime directory owner.
-        with patch("pi_player.mpv_player.os.geteuid", return_value=uid), \
+        if os.getuid() == 0:
+            self.skipTest("kiosk-UID lifecycle tests require an unprivileged Unix runner")
+        with patch("pi_player.mpv_player.os.geteuid", return_value=os.getuid()), \
              patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.root)}), \
              patch("pi_player.mpv_player.subprocess.Popen", return_value=fake):
             session = player.start(self.video)
@@ -93,6 +92,46 @@ class AdapterTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 player.start(self.video)
         child.returncode = 1
+        self.assertTrue(player.stop(session))
+
+
+    def test_frozen_position_is_not_playing_forever(self):
+        player, child, session = self.setup_player()
+        with patch("pi_player.mpv_player.read_reply", side_effect=[
+                {"error": "success", "data": 1.0},
+                {"error": "success", "data": 2.0},
+                {"error": "success", "data": 2.0},
+                {"error": "success", "data": 2.0}]), \
+             patch("pi_player.mpv_player.time.monotonic", side_effect=[10, 11, 12, 72]):
+            self.assertEqual(player.status(session)["state"], "starting")
+            self.assertEqual(player.status(session)["state"], "playing")
+            self.assertEqual(player.status(session)["state"], "playing")
+            self.assertEqual(player.status(session)["state"], "stalled")
+        self.assertTrue(player.stop(session))
+
+    def test_invalid_positions_are_not_progress(self):
+        player, child, session = self.setup_player()
+        for value in (-1, float("nan"), float("inf"), 10**10000, True):
+            with patch("pi_player.mpv_player.read_reply", return_value={"error": "success", "data": value}):
+                result = player.status(session)
+                self.assertEqual(result["state"], "starting")
+                self.assertIsNone(result["position_seconds"])
+                self.assertIn("monitor_error", result)
+        self.assertTrue(player.stop(session))
+
+    def test_exited_session_retires_socket(self):
+        player, child, session = self.setup_player()
+        old_dir = Path(player._ipc_dir.name)
+        self.assertTrue(old_dir.exists())
+        child.returncode = 0
+        self.assertEqual(player.status(session)["state"], "exited")
+        self.assertFalse(old_dir.exists())
+
+    def test_invalid_stop_timeout_rejected(self):
+        player, child, session = self.setup_player()
+        for value in (float("nan"), float("inf"), -1, 0, 100, True):
+            with self.assertRaises(ValueError):
+                player.stop(session, timeout=value)
         self.assertTrue(player.stop(session))
 
     def test_failed_launch_cleans_temporary_directory(self):
