@@ -157,6 +157,26 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(states, ["starting", "starting", "playing", "playing", "playing"])
         self.assertTrue(player.stop(session))
 
+    def test_exact_50ms_boundary_is_progress(self):
+        player, child, session = self.setup_player()
+        with patch("pi_player.mpv_player.read_reply", side_effect=[
+                {"error": "success", "data": 2.00},
+                {"error": "success", "data": 2.05}]), \
+             patch("pi_player.mpv_player.time.monotonic", side_effect=[1, 2]):
+            self.assertEqual(player.status(session)["state"], "starting")
+            self.assertEqual(player.status(session)["state"], "playing")
+        self.assertTrue(player.stop(session))
+
+    def test_subthreshold_increase_is_not_progress(self):
+        player, child, session = self.setup_player()
+        with patch("pi_player.mpv_player.read_reply", side_effect=[
+                {"error": "success", "data": 2.00},
+                {"error": "success", "data": 2.049}]), \
+             patch("pi_player.mpv_player.time.monotonic", side_effect=[1, 2]):
+            self.assertEqual(player.status(session)["state"], "starting")
+            self.assertEqual(player.status(session)["state"], "starting")
+        self.assertTrue(player.stop(session))
+
     def test_rewind_within_progress_window_resets_baseline(self):
         player, child, session = self.setup_player()
         samples = [1.00, 1.04, 1.02, 1.06, 1.08]
