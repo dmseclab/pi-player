@@ -157,6 +157,28 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(states, ["starting", "starting", "playing", "playing", "playing"])
         self.assertTrue(player.stop(session))
 
+    def test_rewind_within_progress_window_resets_baseline(self):
+        player, child, session = self.setup_player()
+        samples = [1.00, 1.04, 1.02, 1.06, 1.08]
+        with patch("pi_player.mpv_player.read_reply",
+                   side_effect=[{"error": "success", "data": value} for value in samples]), \
+             patch("pi_player.mpv_player.time.monotonic", side_effect=[1, 2, 3, 4, 5]):
+            states = [player.status(session)["state"] for _ in samples]
+        # The 1.04 -> 1.02 rewind must reset the accumulation baseline.
+        # Only 40 ms progressed after rewind at 1.06, then 60 ms at 1.08.
+        self.assertEqual(states, ["starting", "starting", "starting", "starting", "playing"])
+        self.assertTrue(player.stop(session))
+
+    def test_invalid_position_does_not_change_latest_valid_sample(self):
+        player, child, session = self.setup_player()
+        samples = [1.00, 1.04, float("inf"), 1.02, 1.06, 1.08]
+        with patch("pi_player.mpv_player.read_reply",
+                   side_effect=[{"error": "success", "data": value} for value in samples]), \
+             patch("pi_player.mpv_player.time.monotonic", side_effect=[1, 2, 3, 4, 5, 6]):
+            states = [player.status(session)["state"] for _ in samples]
+        self.assertEqual(states, ["starting", "starting", "starting", "starting", "starting", "playing"])
+        self.assertTrue(player.stop(session))
+
     def test_exited_session_retires_socket(self):
         player, child, session = self.setup_player()
         old_dir = Path(player._ipc_dir.name)
