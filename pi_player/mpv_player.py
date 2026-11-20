@@ -176,11 +176,12 @@ class MpvPlayer:
             if isinstance(raw_position, bool) or not isinstance(raw_position, (float, int)):
                 raise OSError("MPV position is invalid")
             try:
-                position = float(raw_position)
+                checked_position = float(raw_position)
             except (OverflowError, ValueError) as exc:
                 raise OSError("MPV position is invalid") from exc
-            if not math.isfinite(position) or position < 0:
+            if not math.isfinite(checked_position) or checked_position < 0:
                 raise OSError("MPV position is invalid")
+            position = checked_position  # Only validated samples can enter tracking.
         except (OSError, ValueError, TimeoutError) as exc:
             error = str(exc)
         with self._lock:
@@ -196,12 +197,15 @@ class MpvPlayer:
             self._applied_poll = serial
             now = time.monotonic()
             advanced = (position is not None and self._last_position is not None
-                        and position > self._last_position + 0.05)
+                        and position - self._last_position >= 0.05)
             if advanced:
                 self._last_progress_at = now
                 self._ever_progressed = True
-            if position is not None:
-                # A seek or loop rewind establishes a new baseline, not progress.
+                # Keep the previous baseline during sub-threshold samples so
+                # their cumulative forward motion is eventually recognized.
+                self._last_position = position
+            elif position is not None and (self._last_position is None or position < self._last_position):
+                # A seek/loop rewind creates a fresh baseline, never progress.
                 self._last_position = position
             since_progress = (now - self._last_progress_at
                               if self._last_progress_at is not None else None)
@@ -221,7 +225,8 @@ class MpvPlayer:
             return result
 
     def stop(self, session: str, *, timeout: float = 3.0) -> bool:
-        if isinstance(timeout, bool) or not isinstance(timeout, (float, int)) or not math.isfinite(timeout) or not 0 < timeout <= 10:
+        if (isinstance(timeout, bool) or not isinstance(timeout, (float, int))
+                or not 0 < timeout <= 10):
             raise ValueError("Stop timeout must be between 0 and 10 seconds")
         with self._lock:
             if not session or session != self._session:
