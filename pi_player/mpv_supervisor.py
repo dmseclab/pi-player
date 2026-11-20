@@ -171,6 +171,7 @@ class OfflineSupervisor:
                 or type(grant.enabled) is not bool):
             raise ProtocolError("Invalid trusted playback options")
         if (type(grant.valid_until) not in (float, int)
+                or not 0 <= grant.valid_until <= 1e15
                 or not math.isfinite(grant.valid_until)):
             raise ProtocolError("Invalid broker grant deadline")
         if request.request_id in self._used_requests:
