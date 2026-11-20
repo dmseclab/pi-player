@@ -68,3 +68,13 @@ python3 -m unittest discover -s tests -v
 node tests/test_player.cjs
 node tests/test_pdf_player.cjs
 ```
+
+## Phase 2A-2 — offline supervisor contract hardening
+
+Independent validation at commit `0582ccd2` reported **FAIL for Phase 2B implementation**, despite green Ubuntu CI (196 passed, 2 skipped) and accepted MPV 50 ms precision. The contract still permitted deadline-edge readiness, replay after its 64-entry cache evicted an old request, and concurrent starts.
+
+This patch locks public transitions with an `RLock` as a defense-in-depth **offline** policy measure; the deployed service must still have a single serialized owner for broker decisions, process ownership, and event delivery. A monotonic highest-generation watermark rejects older and same-generation starts even after request-cache eviction **within one owner lifetime**. Retries require the same request and loop setting **and a currently valid matching broker grant**. Startup readiness now checks the authoritative deadline when evidence arrives and requires the expected entry ID, not just a timer callback. Direct stop requests and MPV end-file reasons are strictly validated. New regression tests exercise concurrency, timed-out readiness, cache eviction, generations, duplicate grants/options, and malformed events.
+
+**Explicit limitations:** the in-memory watermark does not survive a service restart and is **not** a substitute for the authenticated browser-owner epoch/lease. An untrusted or externally supplied `AuthorizedVideo` is not proof of media eligibility; there is no secure broker or browser authentication yet. The `_finish` policy transition vacates an offline session but does not wait for an actual child to exit; the future supervisor must retain and quarantine the renderer slot until process exit/cgroup state is confirmed. Actual `file-loaded`, progress, and compositor readiness must be authenticated, session-bound observations. No standalone socket, API endpoint, service unit, installer or production change is part of this patch.
+
+Do not enable hybrid playback or change Pi accounts before dedicated Unix-peer authentication, secure file opening, Wayland testing, crash recovery and rollback design. Tests and CI for this exact commit remain to be independently validated.
