@@ -36,3 +36,35 @@ New tests cover invalid samples during stalls, negative samples between identica
 Phase 1D was accepted **PASS WITH FINDINGS** by independent Ubuntu validation (177 Python passes, 15 MPV passes, no Critical/High defects). Its Medium finding was that a backward movement above the saved 50 ms accumulation baseline could be missed. Phase 1E records the latest *valid* sample separately, detects any backward movement against that sample, and resets the accumulation baseline. Invalid IPC positions do not alter either baseline. Added deterministic tests for `1.00 -> 1.04 -> 1.02 -> 1.06 -> 1.08` and an invalid value inserted before a rewind. **This change is not test-accepted until its new exact-commit CI and Codex results are reviewed.**
 
 Next stage: design an unprivileged kiosk-owned process supervisor and an authenticated control transport. Do not enable MPV or alter production/kiosk accounts before completing and accepting the design. Do not promote to `main` until lab hardware soak and full acceptance.
+
+## Phase 2A — offline supervisor policy baseline
+
+The latest Phase 1E report accepted the isolated controller for Phase 2 supervisor development (179 Python passes, 17 MPV passes; no Critical/High/Medium defects). An exact-boundary progress comparison correction (50 ms, using a 1 ns float tolerance) and dedicated regression tests were then committed. **Phase 2A changes are not accepted until exact-commit CI/Codex validation.**
+
+`pi_player/mpv_supervisor.py` is an **offline, side-effect-free contract**, NOT an installed supervisor. Nothing imports it in the running application. No API route, control listener, browser bridge, service unit or startup hook exists. It cannot start/kill processes, authenticate Unix peers or open media. The `AuthorizedVideo` value is only a future broker response schema: constructing it is not proof of permission. A real broker must mint grants only after authenticated UID checks, playlist/schedule authorization, and secure media opening.
+
+Protocol version 1 accepts three exact JSON request shapes, each limited to 4096 bytes and rejecting extra fields, paths, URLs, environment overrides and arbitrary MPV arguments:
+
+- `start`: UUID `request_id`, UUID `item_id`, `playlist_revision`, integer `generation`.
+- `stop`: UUID `request_id`, UUID `session_id`, `playlist_revision`, integer `generation`.
+- `status`: UUID `request_id`, UUID `session_id`.
+
+An offline `begin` additionally requires a matching, unexpired broker grant. Only one session may be active. Duplicate active starts are idempotent; replayed completed starts and unrelated concurrent starts are rejected. Stale session/playlist generations cannot stop a replacement. The 30-second startup deadline requires **both** trusted observed playback progress and a trusted compositor surface-readiness signal for the expected MPV entry. Neither event may be manufactured from the public browser or ordinary heartbeat. A matching `end-file` with `reason=eof` completes only an accepted non-looping session; errors and early exits do not. Loops remain under Chromium duration control. No action in this policy module currently performs physical display handover.
+
+### Phase 2B next engineering boundary
+
+1. Implement a kiosk-owned **single process** supervisor as a graphical session service, with systemd cgroup supervision and explicit orphan/D-state quarantine. This is not the same as the offline state machine.
+2. Design and independently test a secure local bridge and media broker using verified Unix peer credentials, without adding publicly reachable MPV control routes. The current installer uses the same account for API and kiosk; do not claim otherwise.
+3. Plan a reversible lab-only migration to separate API and kiosk identities, preserving existing data, autologin, watchdog, and fallback. Review the installer and updater together before any permission changes.
+4. Implement real `file-loaded`/`end-file` event correlation, trusted progress and Wayland readiness evidence, and rollback-safe Chromium handover. Remain **feature-off by default** until lab validation.
+5. Recheck precise MPV A2 switches and test mixed playlists, autoplay, scheduled changes, looping, mute, recovery, and soak on lab hardware. Construction and `main` remain frozen.
+
+Test commands with disposable `PI_PLAYER_DATA_DIR` and `PI_PLAYER_LOG_DIR`:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_mpv_player.py' -v
+python3 -m unittest discover -s tests -p 'test_mpv_supervisor.py' -v
+python3 -m unittest discover -s tests -v
+node tests/test_player.cjs
+node tests/test_pdf_player.cjs
+```
