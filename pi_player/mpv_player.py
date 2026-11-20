@@ -33,12 +33,19 @@ def read_reply(ipc: Path, command: list, *, deadline_seconds: float = 1.0) -> di
     """Ignore unsolicited events and read complete JSON lines until request 1."""
     deadline = time.monotonic() + deadline_seconds
     data = bytearray()
+    def remaining():
+        seconds = deadline - time.monotonic()
+        if seconds <= 0:
+            raise TimeoutError("MPV IPC deadline exceeded")
+        return seconds
+
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-        client.settimeout(max(0.001, deadline - time.monotonic()))
+        client.settimeout(remaining())
         client.connect(str(ipc))
+        client.settimeout(remaining())
         client.sendall((json.dumps({"command": command, "request_id": 1}) + "\n").encode())
-        while time.monotonic() < deadline:
-            client.settimeout(max(0.001, deadline - time.monotonic()))
+        while True:
+            client.settimeout(remaining())
             packet = client.recv(4096)
             if not packet:
                 break
@@ -54,7 +61,8 @@ def read_reply(ipc: Path, command: list, *, deadline_seconds: float = 1.0) -> di
                     raise OSError("Invalid MPV IPC JSON") from exc
                 if not isinstance(parsed, dict):
                     raise OSError("Invalid MPV IPC response shape")
-                if parsed.get("request_id") == 1:
+                if type(parsed.get("request_id")) is int and parsed["request_id"] == 1:
+                    remaining()  # A late response cannot turn a timed-out read into success.
                     return parsed
     raise OSError("No matching MPV IPC response before deadline")
 
@@ -72,6 +80,10 @@ class MpvPlayer:
         self._ipc_path = None
         self._ever_progressed = False
         self._last_exit = None
+        self._last_position = None
+        self._last_progress_at = None
+        self._poll_serial = 0
+        self._applied_poll = 0
 
     def _retire_exited(self):
         if self._process is not None and self._process.poll() is None:
@@ -82,6 +94,8 @@ class MpvPlayer:
         directory = self._ipc_dir
         self._process = self._session = self._ipc_dir = self._ipc_path = None
         self._ever_progressed = False
+        self._last_position = None
+        self._last_progress_at = None
         if directory is not None:
             try:
                 directory.cleanup()
@@ -119,55 +133,96 @@ class MpvPlayer:
                     stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
                 )
             except Exception:
-                ipc_dir.cleanup()
+                try:
+                    ipc_dir.cleanup()
+                except OSError:
+                    pass
                 raise
             self._process, self._ipc_dir, self._ipc_path = process, ipc_dir, ipc
             self._session = uuid.uuid4().hex
             self._ever_progressed = False
             self._last_exit = None
+            self._last_position = None
+            self._last_progress_at = None
+            self._poll_serial = self._applied_poll = 0
             return self._session
 
     def status(self, session: str) -> dict:
+        """A positive time position alone does not prove playback is advancing.
+
+        State becomes 'playing' only after a new position exceeds an earlier
+        sample. Later flat samples become 'stalled' after 15 seconds. Actual
+        rendered frames and natural EOF require the future kiosk supervisor.
+        """
         with self._lock:
             if not session or session != self._session:
                 raise ValueError("Stale or unknown MPV session")
             process = self._process
             ipc = self._ipc_path
-            ever_progressed = self._ever_progressed
-            code = process.poll()
-            if code is not None:
-                # A clean quit or window close also exits 0; this is NOT EOF evidence.
+            self._poll_serial += 1
+            serial = self._poll_serial
+            if process.poll() is not None:
+                code = process.poll()
+                self._retire_exited()
                 return {"session": session, "state": "exited", "running": False,
                         "exit_code": code, "position_seconds": None, "eof": False}
+        position = None
+        error = None
         try:
             reply = read_reply(ipc, ["get_property", "time-pos"])
             if reply.get("error") != "success":
                 raise OSError("MPV position not yet available")
-            pos = reply.get("data")
-            if isinstance(pos, bool) or not isinstance(pos, (int, float)) or not math.isfinite(pos):
+            raw_position = reply.get("data")
+            if isinstance(raw_position, bool) or not isinstance(raw_position, (float, int)):
                 raise OSError("MPV position is invalid")
-            position = float(pos)
-            state = "playing" if position > 0 else "starting"
-            error = None
-        except (OSError, ValueError) as exc:
-            position = None
-            state = "monitor_error" if ever_progressed else "starting"
+            try:
+                position = float(raw_position)
+            except (OverflowError, ValueError) as exc:
+                raise OSError("MPV position is invalid") from exc
+            if not math.isfinite(position) or position < 0:
+                raise OSError("MPV position is invalid")
+        except (OSError, ValueError, TimeoutError) as exc:
             error = str(exc)
         with self._lock:
             if session != self._session or self._process is not process:
                 raise ValueError("MPV session replaced while reading status")
             if process.poll() is not None:
+                code = process.poll()
+                self._retire_exited()
                 return {"session": session, "state": "exited", "running": False,
-                        "exit_code": process.poll(), "position_seconds": None, "eof": False}
-            if position is not None and position > 0:
+                        "exit_code": code, "position_seconds": None, "eof": False}
+            if serial < self._applied_poll:
+                raise ValueError("Out-of-order MPV status response")
+            self._applied_poll = serial
+            now = time.monotonic()
+            advanced = (position is not None and self._last_position is not None
+                        and position > self._last_position + 0.05)
+            if advanced:
+                self._last_progress_at = now
                 self._ever_progressed = True
+            if position is not None:
+                # A seek or loop rewind establishes a new baseline, not progress.
+                self._last_position = position
+            since_progress = (now - self._last_progress_at
+                              if self._last_progress_at is not None else None)
+            if since_progress is not None and since_progress >= 15.0:
+                state = "stalled"
+            elif since_progress is not None:
+                state = "playing"
+            elif error is not None:
+                state = "starting"
+            else:
+                state = "starting"
             result = {"session": session, "state": state, "running": True,
-                      "exit_code": None, "position_seconds": position, "eof": False}
+                      "exit_code": None, "position_seconds": position, "eof": False,
+                      "progress_age_seconds": round(since_progress, 3) if since_progress is not None else None}
             if error is not None:
                 result["monitor_error"] = error
             return result
 
     def stop(self, session: str, *, timeout: float = 3.0) -> bool:
+        if isinstance(timeout, bool) or not isinstance(timeout, (float, int)) or not math.isfinite(timeout) or not 0 < timeout <= 10:
+            raise ValueError("Stop timeout must be between 0 and 10 seconds")
         with self._lock:
             if not session or session != self._session:
                 return False
