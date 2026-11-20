@@ -80,6 +80,21 @@ class StateTests(unittest.TestCase):
                     self.engine.begin(self.start, grant, now=1)
                 self.assertIsNone(self.engine.active)
 
+    def test_malformed_direct_grants_and_requests_rejected(self):
+        invalid_grants = [
+            AuthorizedVideo(self.item, "revision_1", valid_until="tomorrow"),
+            AuthorizedVideo(self.item, "revision_1", valid_until=float("nan")),
+            AuthorizedVideo(self.item, "revision_1", valid_until=100, video=1),
+            AuthorizedVideo(self.item, "revision_1", valid_until=100, enabled=1),
+        ]
+        for grant in invalid_grants:
+            with self.subTest(grant=grant), self.assertRaises(ProtocolError):
+                self.engine.begin(self.start, grant, now=1)
+        invalid = StartRequest("not-a-uuid", self.item, "revision_1", 42)
+        with self.assertRaises(ProtocolError):
+            self.engine.begin(invalid, self.grant, now=1)
+        self.assertIsNone(self.engine.active)
+
     def test_readiness_requires_file_progress_and_surface(self):
         session = self.begin()
         self.assertFalse(self.engine.snapshot(session)["ready"])
