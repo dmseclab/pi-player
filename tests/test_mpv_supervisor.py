@@ -99,17 +99,17 @@ class StateTests(unittest.TestCase):
         session = self.begin()
         self.assertFalse(self.engine.snapshot(session)["ready"])
         with self.assertRaises(ProtocolError):
-            self.engine.observe_readiness(session, progressed=True)
+            self.engine.observe_readiness(session, entry_id=5, progressed=True, now=2)
         self.engine.observe_file(session, 5)
-        self.assertFalse(self.engine.observe_readiness(session, progressed=True)["ready"])
-        self.assertTrue(self.engine.observe_readiness(session, surface_ready=True)["ready"])
+        self.assertFalse(self.engine.observe_readiness(session, entry_id=5, progressed=True, now=2)["ready"])
+        self.assertTrue(self.engine.observe_readiness(session, entry_id=5, surface_ready=True, now=2)["ready"])
 
     def test_natural_eof_only_for_ready_entry_once(self):
         session = self.begin()
         self.engine.observe_file(session, 5)
         with self.assertRaises(ProtocolError):
             self.engine.end_file(session, 6, "eof")
-        self.engine.observe_readiness(session, progressed=True, surface_ready=True)
+        self.engine.observe_readiness(session, entry_id=5, progressed=True, surface_ready=True, now=2)
         completed = self.engine.end_file(session, 5, "eof")
         self.assertTrue(completed["eof"])
         self.assertEqual(completed["state"], "completed")
@@ -126,7 +126,7 @@ class StateTests(unittest.TestCase):
     def test_loop_ignores_eof_until_owner_timing_stop(self):
         session = self.begin(loop=True)
         self.engine.observe_file(session, 5)
-        self.engine.observe_readiness(session, progressed=True, surface_ready=True)
+        self.engine.observe_readiness(session, entry_id=5, progressed=True, surface_ready=True, now=2)
         self.assertIsNone(self.engine.end_file(session, 5, "eof"))
         self.assertTrue(self.engine.snapshot(session)["ready"])
         stopped = self.engine.stop(StopRequest(ident(), session, "revision_1", 42))
@@ -136,7 +136,7 @@ class StateTests(unittest.TestCase):
     def test_error_not_eof(self):
         session = self.begin()
         self.engine.observe_file(session, 5)
-        self.engine.observe_readiness(session, progressed=True, surface_ready=True)
+        self.engine.observe_readiness(session, entry_id=5, progressed=True, surface_ready=True, now=2)
         result = self.engine.end_file(session, 5, "error")
         self.assertEqual(result["state"], "failed")
         self.assertFalse(result["eof"])
@@ -170,6 +170,90 @@ class StateTests(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             self.engine.begin(other, self.grant, now=2)
         self.assertEqual(self.engine.snapshot(session)["generation"], 42)
+
+    def test_readiness_at_deadline_rejected_even_before_timer(self):
+        session = self.begin()
+        self.engine.observe_file(session, 5)
+        with self.assertRaisesRegex(ProtocolError, "deadline"):
+            self.engine.observe_readiness(session, entry_id=5, progressed=True,
+                                          surface_ready=True, now=31)
+        self.assertIsNone(self.engine.active)
+        self.assertEqual(self.engine.last_terminal["reason"], "startup_timeout")
+
+    def test_readiness_wrong_entry_does_not_latch_evidence(self):
+        session = self.begin()
+        self.engine.observe_file(session, 5)
+        with self.assertRaises(ProtocolError):
+            self.engine.observe_readiness(session, entry_id=6, progressed=True, now=2)
+        self.assertFalse(self.engine.observe_readiness(
+            session, entry_id=5, surface_ready=True, now=2)["ready"])
+        self.assertTrue(self.engine.observe_readiness(
+            session, entry_id=5, progressed=True, now=2)["ready"])
+
+    def test_stale_generation_rejected_even_after_cache_eviction(self):
+        self.begin()
+        self.engine.stop(StopRequest(ident(), self.engine.active.session_id,
+                                     "revision_1", 42))
+        for generation in range(43, 110):
+            request = StartRequest(ident(), self.item, "revision_1", generation)
+            session = self.engine.begin(request, self.grant, now=2)["session_id"]
+            self.engine.stop(StopRequest(ident(), session, "revision_1", generation))
+        with self.assertRaises(ProtocolError):
+            self.engine.begin(self.start, self.grant, now=3)
+        lower = StartRequest(ident(), self.item, "revision_1", 42)
+        with self.assertRaises(ProtocolError):
+            self.engine.begin(lower, self.grant, now=3)
+
+    def test_duplicate_requires_fresh_grant_and_same_options(self):
+        session = self.begin()
+        with self.assertRaises(ProtocolError):
+            self.engine.begin(self.start, self.grant, loop=True, now=2)
+        with self.assertRaises(ProtocolError):
+            self.engine.begin(self.start, AuthorizedVideo(
+                self.item, "revision_1", valid_until=2), now=2)
+        self.assertEqual(self.engine.snapshot(session)["state"], "starting")
+
+    def test_direct_stop_rejects_boolean_generation_and_bad_id(self):
+        session = self.begin()
+        for request in (
+            StopRequest(ident(), session, "revision_1", True),
+            StopRequest("not-uuid", session, "revision_1", 42),
+        ):
+            with self.assertRaises(ProtocolError):
+                self.engine.stop(request)
+        self.assertEqual(self.engine.snapshot(session)["state"], "starting")
+
+    def test_end_file_rejects_bad_reason_without_terminal_transition(self):
+        session = self.begin()
+        self.engine.observe_file(session, 5)
+        for reason in (True, 0, None, "bad"):
+            with self.assertRaises(ProtocolError):
+                self.engine.end_file(session, 5, reason)
+        self.assertEqual(self.engine.snapshot(session)["state"], "starting")
+
+    def test_two_simultaneous_starts_one_winner(self):
+        import threading
+        barrier = threading.Barrier(3)
+        results = []
+        results_lock = threading.Lock()
+        def attempt(generation):
+            request = StartRequest(ident(), self.item, "revision_1", generation)
+            barrier.wait()
+            try:
+                value = self.engine.begin(request, self.grant, now=2)
+                outcome = ("ok", value["session_id"])
+            except ProtocolError:
+                outcome = ("rejected", None)
+            with results_lock:
+                results.append(outcome)
+        threads = [threading.Thread(target=attempt, args=(n,)) for n in (42, 43)]
+        for thread in threads:
+            thread.start()
+        barrier.wait()
+        for thread in threads:
+            thread.join(timeout=3)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(sorted(x[0] for x in results), ["ok", "rejected"])
 
     def test_late_events_do_not_affect_replacement(self):
         first = self.begin()
