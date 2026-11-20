@@ -205,9 +205,13 @@ class MpvPlayer:
                       and position < self._last_valid_position)
             if rewind:
                 self._last_position = position
-            advanced = (position is not None and not rewind
-                        and self._last_position is not None
-                        and position - self._last_position >= 0.05)
+            delta = (position - self._last_position
+                     if position is not None and self._last_position is not None else None)
+            # A nominal 50 ms advance (e.g. 2.00 -> 2.05) must not be
+            # lost to binary float representation; tolerance is 1 ns.
+            advanced = (delta is not None and not rewind
+                        and (delta >= 0.05 or math.isclose(
+                            delta, 0.05, rel_tol=0.0, abs_tol=1e-9)))
             if advanced:
                 self._last_progress_at = now
                 self._ever_progressed = True
