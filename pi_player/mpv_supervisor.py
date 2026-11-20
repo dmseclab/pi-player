@@ -162,8 +162,17 @@ class OfflineSupervisor:
         tick = self._now(now)
         if not isinstance(request, StartRequest) or not isinstance(grant, AuthorizedVideo):
             raise ProtocolError("Start requires a broker grant")
-        if type(loop) is not bool:
-            raise ProtocolError("Invalid loop setting")
+        # Also validate callers that bypass the JSON parser (trusted Python code).
+        _uuid(request.request_id, "Request")
+        _uuid(request.item_id, "Item")
+        _revision(request.playlist_revision)
+        _generation(request.generation)
+        if (type(loop) is not bool or type(grant.video) is not bool
+                or type(grant.enabled) is not bool):
+            raise ProtocolError("Invalid trusted playback options")
+        if (type(grant.valid_until) not in (float, int)
+                or not math.isfinite(grant.valid_until)):
+            raise ProtocolError("Invalid broker grant deadline")
         if request.request_id in self._used_requests:
             if self.active and self.active.request == request:
                 return self.snapshot(self.active.session_id)
@@ -173,7 +182,7 @@ class OfflineSupervisor:
         if (not grant.video or not grant.enabled
                 or grant.item_id != request.item_id
                 or grant.playlist_revision != request.playlist_revision
-                or not math.isfinite(grant.valid_until) or tick >= grant.valid_until):
+                or tick >= grant.valid_until):
             raise ProtocolError("Video not authorised by current playlist")
         self.active = Session(uuid.uuid4().hex, request, loop, tick)
         # Store canonical UUID for the public session identity.
