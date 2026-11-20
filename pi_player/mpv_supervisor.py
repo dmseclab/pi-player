@@ -10,6 +10,8 @@ import json
 import math
 import time
 import uuid
+import threading
+from functools import wraps
 from collections import deque
 from dataclasses import dataclass
 from typing import Literal
@@ -134,6 +136,15 @@ class Session:
     observed_surface: bool = False
 
 
+def serialized(method):
+    """All offline policy transitions share one owner lock."""
+    @wraps(method)
+    def guarded(self, *args, **kwargs):
+        with self._lock:
+            return method(self, *args, **kwargs)
+    return guarded
+
+
 class OfflineSupervisor:
     """Side-effect-free policy engine for one MPV session.
 
@@ -144,19 +155,23 @@ class OfflineSupervisor:
     def __init__(self, *, startup_seconds: float = MAX_STARTUP_SECONDS):
         if type(startup_seconds) not in (int, float) or not 0 < startup_seconds <= 60:
             raise ValueError("Invalid startup deadline")
+        self._lock = threading.RLock()
         self.startup_seconds = float(startup_seconds)
         self.active: Session | None = None
         self.last_terminal: dict | None = None
         self._used_requests: dict[str, str] = {}
         self._order = deque(maxlen=64)
+        self._highest_generation = -1
+        self._last_tick = None
 
     @staticmethod
     def _now(value: float | None) -> float:
         result = time.monotonic() if value is None else value
-        if type(result) not in (int, float) or not math.isfinite(result):
+        if type(result) not in (int, float) or not 0 <= result <= 1e15 or not math.isfinite(result):
             raise ProtocolError("Invalid monotonic timestamp")
         return float(result)
 
+    @serialized
     def begin(self, request: StartRequest, grant: AuthorizedVideo, *,
               loop: bool = False, now: float | None = None) -> dict:
         tick = self._now(now)
@@ -170,21 +185,31 @@ class OfflineSupervisor:
         if (type(loop) is not bool or type(grant.video) is not bool
                 or type(grant.enabled) is not bool):
             raise ProtocolError("Invalid trusted playback options")
+        _uuid(grant.item_id, "Grant item")
+        _revision(grant.playlist_revision)
         if (type(grant.valid_until) not in (float, int)
                 or not 0 <= grant.valid_until <= 1e15
                 or not math.isfinite(grant.valid_until)):
             raise ProtocolError("Invalid broker grant deadline")
-        if request.request_id in self._used_requests:
-            if self.active and self.active.request == request:
-                return self.snapshot(self.active.session_id)
-            raise ProtocolError("Replayed start request")
-        if self.active is not None:
-            raise ProtocolError("Renderer busy")
         if (not grant.video or not grant.enabled
                 or grant.item_id != request.item_id
                 or grant.playlist_revision != request.playlist_revision
                 or tick >= grant.valid_until):
             raise ProtocolError("Video not authorised by current playlist")
+        if request.request_id in self._used_requests:
+            if (self.active and self.active.request == request
+                    and self.active.loop == loop):
+                if self.active.state == "starting" and tick - self.active.started_at >= self.startup_seconds:
+                    self._finish("failed", "startup_timeout")
+                    raise ProtocolError("MPV startup deadline expired")
+                return self.snapshot(self.active.session_id)
+            raise ProtocolError("Replayed or conflicting start request")
+        if self.active is not None:
+            raise ProtocolError("Renderer busy")
+        # A bounded request cache is not an anti-replay guarantee. A monotonic
+        # generation watermark survives eviction for this owner lifetime.
+        if request.generation <= self._highest_generation:
+            raise ProtocolError("Stale or replayed player generation")
         self.active = Session(uuid.uuid4().hex, request, loop, tick)
         # Store canonical UUID for the public session identity.
         self.active.session_id = str(uuid.UUID(hex=self.active.session_id))
@@ -192,6 +217,7 @@ class OfflineSupervisor:
             self._used_requests.pop(self._order.popleft(), None)
         self._order.append(request.request_id)
         self._used_requests[request.request_id] = self.active.session_id
+        self._highest_generation = request.generation
         return self.snapshot(self.active.session_id)
 
     def _session(self, session_id: str) -> Session:
@@ -199,7 +225,9 @@ class OfflineSupervisor:
             raise ProtocolError("Stale or unknown supervisor session")
         return self.active
 
+    @serialized
     def snapshot(self, session_id: str) -> dict:
+        _uuid(session_id, "Session")
         current = self._session(session_id)
         return {"session_id": current.session_id, "item_id": current.request.item_id,
                 "playlist_revision": current.request.playlist_revision,
@@ -207,7 +235,9 @@ class OfflineSupervisor:
                 "state": current.state, "ready": current.state == "playing",
                 "eof": False}
 
+    @serialized
     def observe_file(self, session_id: str, entry_id: int) -> None:
+        _uuid(session_id, "Session")
         current = self._session(session_id)
         if type(entry_id) is not int or entry_id < 0:
             raise ProtocolError("Invalid MPV entry ID")
@@ -215,19 +245,27 @@ class OfflineSupervisor:
             raise ProtocolError("Unexpected MPV entry change")
         current.entry_id = entry_id
 
-    def observe_readiness(self, session_id: str, *, progressed: bool = False,
-                          surface_ready: bool = False) -> dict:
+    @serialized
+    def observe_readiness(self, session_id: str, *, entry_id: int | None = None,
+                          progressed: bool = False, surface_ready: bool = False,
+                          now: float | None = None) -> dict:
+        _uuid(session_id, "Session")
+        tick = self._now(now)
         current = self._session(session_id)
         if type(progressed) is not bool or type(surface_ready) is not bool:
             raise ProtocolError("Invalid readiness evidence")
-        if current.entry_id is None:
-            raise ProtocolError("No matching MPV file-loaded entry")
+        if type(entry_id) is not int or current.entry_id is None or entry_id != current.entry_id:
+            raise ProtocolError("Readiness does not match MPV file entry")
+        if current.state == "starting" and tick - current.started_at >= self.startup_seconds:
+            self._finish("failed", "startup_timeout")
+            raise ProtocolError("MPV startup deadline expired")
         current.observed_progress |= progressed
         current.observed_surface |= surface_ready
         if current.observed_progress and current.observed_surface:
             current.state = "playing"
         return self.snapshot(session_id)
 
+    @serialized
     def expire_startup(self, *, now: float | None = None) -> dict | None:
         tick = self._now(now)
         if (self.active is not None and self.active.state == "starting"
@@ -235,7 +273,11 @@ class OfflineSupervisor:
             return self._finish("failed", "startup_timeout")
         return None
 
+    @serialized
     def end_file(self, session_id: str, entry_id: int, reason: str) -> dict | None:
+        _uuid(session_id, "Session")
+        if type(reason) is not str or reason not in {"eof", "error", "stop", "quit", "redirect"}:
+            raise ProtocolError("Invalid MPV end-file reason")
         current = self._session(session_id)
         if type(entry_id) is not int or entry_id != current.entry_id:
             raise ProtocolError("Late or wrong MPV end-file event")
@@ -243,11 +285,18 @@ class OfflineSupervisor:
             return None  # Chromium's duration timer controls looping items.
         if reason == "eof" and current.state == "playing":
             return self._finish("completed", "eof")
+        if reason in {"stop", "quit"}:
+            return self._finish("interrupted", reason)
         return self._finish("failed", "unverified_eof" if reason == "eof" else "mpv_error")
 
+    @serialized
     def stop(self, request: StopRequest) -> dict:
         if not isinstance(request, StopRequest):
             raise ProtocolError("Invalid stop command")
+        _uuid(request.request_id, "Request")
+        _uuid(request.session_id, "Session")
+        _revision(request.playlist_revision)
+        _generation(request.generation)
         current = self._session(request.session_id)
         if (request.generation != current.request.generation
                 or request.playlist_revision != current.request.playlist_revision):
