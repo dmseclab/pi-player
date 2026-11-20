@@ -18,3 +18,9 @@ node tests/test_pdf_player.cjs
 ```
 
 Tests must run with disposable `PI_PLAYER_DATA_DIR` and `PI_PLAYER_LOG_DIR`. Lab hardware acceptance is needed for actual video readiness, end-of-file events, fade/focus, all display modes, audio, looping, watchdogs and recovery. **Do not interpret exit code zero as media EOF.**
+
+## Phase 1C progress-state correction
+
+The Phase 1B independent review found that a fixed positive MPV time position was incorrectly reported as `playing`. The controller now requires **two ordered position samples with a measured increase** before returning `playing`, and returns `stalled` if no further progress is observed for 15 seconds. It rejects negative/nonfinite or overflowing positions, older out-of-order polls, invalid stop timeouts, and boolean IPC reply IDs. Reads use an end-to-end monotonic IPC deadline, including send. Unexpected process exit releases the private IPC directory.
+
+These checks do not prove rendered frames. Playback EOF, restart supervision, installer UID separation, secure control IPC, TOCTOU-resistant file opening, and handoff remain future work. No runtime API or kiosk integration is enabled. Run Codex revalidation before acceptance.
