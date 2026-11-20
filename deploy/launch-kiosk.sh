@@ -58,5 +58,6 @@ exec "$BROWSER" \
   --no-first-run \
   --start-maximized \
   --autoplay-policy=no-user-gesture-required \
+  --disable-accelerated-video-decode \
   --ozone-platform=wayland \
   "$URL"
