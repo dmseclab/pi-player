@@ -80,7 +80,8 @@ class MpvPlayer:
         self._ipc_path = None
         self._ever_progressed = False
         self._last_exit = None
-        self._last_position = None
+        self._last_position = None  # stable accumulation baseline
+        self._last_valid_position = None  # most recent accepted sample
         self._last_progress_at = None
         self._poll_serial = 0
         self._applied_poll = 0
@@ -95,6 +96,7 @@ class MpvPlayer:
         self._process = self._session = self._ipc_dir = self._ipc_path = None
         self._ever_progressed = False
         self._last_position = None
+        self._last_valid_position = None
         self._last_progress_at = None
         if directory is not None:
             try:
@@ -143,6 +145,7 @@ class MpvPlayer:
             self._ever_progressed = False
             self._last_exit = None
             self._last_position = None
+            self._last_valid_position = None
             self._last_progress_at = None
             self._poll_serial = self._applied_poll = 0
             return self._session
@@ -196,17 +199,23 @@ class MpvPlayer:
                 raise ValueError("Out-of-order MPV status response")
             self._applied_poll = serial
             now = time.monotonic()
-            advanced = (position is not None and self._last_position is not None
+            # Detect even tiny rewinds against the latest *valid* sample,
+            # independently of the cumulative 50 ms progress baseline.
+            rewind = (position is not None and self._last_valid_position is not None
+                      and position < self._last_valid_position)
+            if rewind:
+                self._last_position = position
+            advanced = (position is not None and not rewind
+                        and self._last_position is not None
                         and position - self._last_position >= 0.05)
             if advanced:
                 self._last_progress_at = now
                 self._ever_progressed = True
-                # Keep the previous baseline during sub-threshold samples so
-                # their cumulative forward motion is eventually recognized.
                 self._last_position = position
-            elif position is not None and (self._last_position is None or position < self._last_position):
-                # A seek/loop rewind creates a fresh baseline, never progress.
+            elif position is not None and self._last_position is None:
                 self._last_position = position
+            if position is not None:
+                self._last_valid_position = position
             since_progress = (now - self._last_progress_at
                               if self._last_progress_at is not None else None)
             if since_progress is not None and since_progress >= 15.0:
