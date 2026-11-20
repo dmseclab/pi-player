@@ -75,7 +75,8 @@ class AdapterTests(unittest.TestCase):
         result = player.status(session)
         self.assertFalse(result["eof"])
         self.assertEqual(result["state"], "exited")
-        self.assertTrue(player.stop(session))
+        self.assertEqual(result["exit_code"], 0)
+        self.assertFalse(player.stop(session), "Session is already retired after observed exit")
 
     def test_ipc_unavailable_is_not_readiness(self):
         player, child, session = self.setup_player()
@@ -119,6 +120,43 @@ class AdapterTests(unittest.TestCase):
                 self.assertIn("monitor_error", result)
         self.assertTrue(player.stop(session))
 
+
+    def test_invalid_sample_cannot_revive_stalled_playback(self):
+        player, child, session = self.setup_player()
+        samples = [1.0, 2.0, 2.0, float("inf"), 2.0]
+        with patch("pi_player.mpv_player.read_reply",
+                   side_effect=[{"error": "success", "data": n} for n in samples]), \
+             patch("pi_player.mpv_player.time.monotonic", side_effect=[1, 2, 20, 21, 22]):
+            states = [player.status(session) for _ in samples]
+        self.assertEqual([r["state"] for r in states],
+                         ["starting", "playing", "stalled", "stalled", "stalled"])
+        self.assertIsNone(states[3]["position_seconds"])
+        self.assertIn("monitor_error", states[3])
+        self.assertEqual(player._last_position, 2.0)
+        self.assertTrue(player.stop(session))
+
+    def test_rejected_negative_sample_preserves_progress_baseline(self):
+        player, child, session = self.setup_player()
+        samples = [3.0, -1.0, 3.0, 3.06]
+        with patch("pi_player.mpv_player.read_reply",
+                   side_effect=[{"error": "success", "data": n} for n in samples]), \
+             patch("pi_player.mpv_player.time.monotonic", side_effect=[1, 2, 3, 4]):
+            states = [player.status(session) for _ in samples]
+        self.assertEqual([r["state"] for r in states],
+                         ["starting", "starting", "starting", "playing"])
+        self.assertIsNone(states[1]["position_seconds"])
+        self.assertTrue(player.stop(session))
+
+    def test_small_cumulative_position_advances_count(self):
+        player, child, session = self.setup_player()
+        samples = [1.0, 1.04, 1.08, 1.12, 1.16]
+        with patch("pi_player.mpv_player.read_reply",
+                   side_effect=[{"error": "success", "data": n} for n in samples]), \
+             patch("pi_player.mpv_player.time.monotonic", side_effect=[1, 2, 3, 4, 5]):
+            states = [player.status(session)["state"] for _ in samples]
+        self.assertEqual(states, ["starting", "starting", "playing", "playing", "playing"])
+        self.assertTrue(player.stop(session))
+
     def test_exited_session_retires_socket(self):
         player, child, session = self.setup_player()
         old_dir = Path(player._ipc_dir.name)
@@ -129,18 +167,21 @@ class AdapterTests(unittest.TestCase):
 
     def test_invalid_stop_timeout_rejected(self):
         player, child, session = self.setup_player()
-        for value in (float("nan"), float("inf"), -1, 0, 100, True):
+        for value in (float("nan"), float("inf"), -1, 0, 100, True, 10**10000):
             with self.assertRaises(ValueError):
                 player.stop(session, timeout=value)
         self.assertTrue(player.stop(session))
 
     def test_failed_launch_cleans_temporary_directory(self):
         player = MpvPlayer(asset_dir=self.assets)
-        with patch("pi_player.mpv_player.os.geteuid", return_value=os.getuid() or 1001), \
+        if os.getuid() == 0:
+            self.skipTest("launch test requires non-root Unix directory ownership")
+        with patch("pi_player.mpv_player.os.geteuid", return_value=os.getuid()), \
              patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.root)}), \
-             patch("pi_player.mpv_player.subprocess.Popen", side_effect=OSError("launch failed")):
-            with self.assertRaises(OSError):
+             patch("pi_player.mpv_player.subprocess.Popen", side_effect=OSError("launch failed")) as spawn:
+            with self.assertRaisesRegex(OSError, "launch failed"):
                 player.start(self.video)
+        spawn.assert_called_once()
         self.assertEqual(list(self.root.glob("pi-player-mpv-*")), [])
 
 
