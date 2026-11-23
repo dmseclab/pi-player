@@ -7,6 +7,9 @@ socket, database permission policy and immutable media publication.
 from __future__ import annotations
 
 import sqlite3
+import socket
+import json
+import uuid
 import threading
 from datetime import datetime
 from typing import Callable
@@ -70,6 +73,49 @@ class OfflineHandoffCoordinator:
                                 asset_root=self.asset_root, now=now)
         finally:
             conn.close()
+
+    def serve_one(self, conn, *, now: datetime) -> None:
+        """Offline single-request kiosk protocol on an established socket.
+
+        The actual listener/service lifecycle is intentionally NOT installed.
+        SO_PEERCRED and the coordinator's generated epoch bind authorization
+        to this connection. Request may specify only a canonical item UUID.
+        Response is the already-verified FD packet, not an arbitrary filepath.
+        """
+        if (not isinstance(conn, socket.socket) or conn.family != socket.AF_UNIX
+                or (conn.type & socket.SOCK_SEQPACKET) != socket.SOCK_SEQPACKET):
+            raise BrokerError("Connected Linux Unix seqpacket socket required")
+        if peer_credentials(conn).uid != self.broker.kiosk_uid:
+            raise BrokerError("Untrusted kiosk peer")
+        lease = self.bind_kiosk(conn, str(uuid.uuid4()))
+        try:
+            packet, controls, flags, _ = conn.recvmsg(1025, 0)
+            if (not packet or len(packet) > 1024
+                    or flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC)
+                    or controls):
+                raise BrokerError("Invalid kiosk media request size")
+            def no_duplicates(pairs):
+                output = {}
+                for key, value in pairs:
+                    if key in output:
+                        raise ValueError("Duplicate request field")
+                    output[key] = value
+                return output
+            try:
+                request = json.loads(packet.decode("ascii"),
+                                     object_pairs_hook=no_duplicates)
+            except (ValueError, UnicodeError) as exc:
+                raise BrokerError("Invalid kiosk media request JSON") from exc
+            if (type(request) is not dict
+                    or set(request) != {"version", "action", "item_id"}
+                    or type(request["version"]) is not int
+                    or request["version"] != 1
+                    or request["action"] != "video"
+                    or type(request["item_id"]) is not str):
+                raise BrokerError("Unsupported kiosk media request")
+            self.handoff(conn, lease, request["item_id"], now=now)
+        finally:
+            self.disconnect(conn)
 
     def handoff(self, conn, lease: OwnerLease, item_id: str, *,
                 now: datetime) -> None:

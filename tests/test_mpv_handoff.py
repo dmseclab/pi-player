@@ -75,6 +75,45 @@ class CoordinatorTests(unittest.TestCase):
         self.now = datetime(2026, 11, 23, 12, 0,
                             tzinfo=ZoneInfo("Africa/Johannesburg"))
 
+    def test_one_request_protocol_success_and_owner_revocation(self):
+        import json
+        self.b.send(json.dumps({
+            "version": 1, "action": "video", "item_id": self.item
+        }).encode("ascii"))
+        self.coordinator.serve_one(self.a, now=self.now)
+        with recv_video_fd(self.b, broker_uid=os.getuid()) as received:
+            self.assertEqual(received.item_id, self.item)
+            self.assertEqual(os.read(received.fd, 17), b"known-video-bytes")
+        self.assertFalse(self.owner.snapshot()["owner_active"])
+
+    def test_one_request_rejects_unknown_command(self):
+        import json
+        self.b.send(json.dumps({
+            "version": 1, "action": "shell", "item_id": self.item
+        }).encode("ascii"))
+        with self.assertRaises(BrokerError):
+            self.coordinator.serve_one(self.a, now=self.now)
+        self.assertFalse(self.owner.snapshot()["owner_active"])
+
+    def test_one_request_rejects_duplicate_json_fields(self):
+        packet = ('{"version":1,"action":"video","item_id":"'
+                  + self.item + '","item_id":"' + self.item + '"}').encode()
+        self.b.send(packet)
+        with self.assertRaises(BrokerError):
+            self.coordinator.serve_one(self.a, now=self.now)
+        self.assertFalse(self.owner.snapshot()["owner_active"])
+
+    def test_one_request_rejects_stopped_playlist(self):
+        import json
+        with sqlite3.connect(self.dbfile) as db:
+            db.execute("UPDATE playback_state SET state='stopped' WHERE id=1")
+        self.b.send(json.dumps({
+            "version": 1, "action": "video", "item_id": self.item
+        }).encode())
+        with self.assertRaises(BrokerError):
+            self.coordinator.serve_one(self.a, now=self.now)
+        self.assertFalse(self.owner.snapshot()["owner_active"])
+
     def test_fresh_video_handoff(self):
         self.coordinator.handoff(self.a, self.lease, self.item, now=self.now)
         with recv_video_fd(self.b, broker_uid=os.getuid()) as received:
