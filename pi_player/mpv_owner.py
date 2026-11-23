@@ -68,6 +68,11 @@ class OfflineOwner:
                 or not hmac.compare_digest(lease.epoch, current.epoch)):
             raise OwnerError("Stale or replaced owner lease")
 
+    def require_current(self, lease: OwnerLease) -> None:
+        """Read-only current owner check for a trusted serialized coordinator."""
+        with self._lock:
+            self._require(lease)
+
     def snapshot(self) -> dict:
         with self._lock:
             return {"reconciled": self._reconciled,
