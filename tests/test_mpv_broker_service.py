@@ -17,6 +17,7 @@ class BrokerDaemonTests(unittest.TestCase):
         self.private.mkdir(mode=0o700)
 
     def test_private_runtime_directory_passes(self):
+        self.private.chmod(0o710)
         validate_runtime_directory(self.private, kiosk_gid=os.getgid())
 
     def test_group_traverse_only_mode_permitted(self):
@@ -31,7 +32,7 @@ class BrokerDaemonTests(unittest.TestCase):
     def test_world_accessible_runtime_directory_denied(self):
         self.private.chmod(0o755)
         with self.assertRaises(RuntimeError):
-            validate_runtime_directory(self.private)
+            validate_runtime_directory(self.private, kiosk_gid=os.getgid())
 
     def test_symlink_runtime_directory_denied(self):
         link = self.root / "link"
