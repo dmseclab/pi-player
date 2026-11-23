@@ -130,6 +130,7 @@ class Session:
     request: StartRequest
     loop: bool
     started_at: float
+    startup_deadline: float
     state: Literal["starting", "playing"] = "starting"
     entry_id: int | None = None
     observed_progress: bool = False
@@ -153,7 +154,7 @@ class OfflineSupervisor:
     """
 
     def __init__(self, *, startup_seconds: float = MAX_STARTUP_SECONDS):
-        if type(startup_seconds) not in (int, float) or not 0 < startup_seconds <= 60:
+        if type(startup_seconds) not in (int, float) or not math.isfinite(startup_seconds) or not 0 < startup_seconds <= 60:
             raise ValueError("Invalid startup deadline")
         self._lock = threading.RLock()
         self.startup_seconds = float(startup_seconds)
@@ -170,6 +171,12 @@ class OfflineSupervisor:
         if type(result) not in (int, float) or not 0 <= result <= 1e15 or not math.isfinite(result):
             raise ProtocolError("Invalid monotonic timestamp")
         return float(result)
+
+    def _ordered_tick(self, tick: float) -> None:
+        """Decisions use ordered, supervisor-owned monotonic time."""
+        if self._last_tick is not None and tick < self._last_tick:
+            raise ProtocolError("Backward monotonic supervisor timestamp")
+        self._last_tick = tick
 
     @serialized
     def begin(self, request: StartRequest, grant: AuthorizedVideo, *,
@@ -196,10 +203,11 @@ class OfflineSupervisor:
                 or grant.playlist_revision != request.playlist_revision
                 or tick >= grant.valid_until):
             raise ProtocolError("Video not authorised by current playlist")
+        self._ordered_tick(tick)
         if request.request_id in self._used_requests:
             if (self.active and self.active.request == request
                     and self.active.loop == loop):
-                if self.active.state == "starting" and tick - self.active.started_at >= self.startup_seconds:
+                if self.active.state == "starting" and tick >= self.active.startup_deadline:
                     self._finish("failed", "startup_timeout")
                     raise ProtocolError("MPV startup deadline expired")
                 return self.snapshot(self.active.session_id)
@@ -210,7 +218,7 @@ class OfflineSupervisor:
         # generation watermark survives eviction for this owner lifetime.
         if request.generation <= self._highest_generation:
             raise ProtocolError("Stale or replayed player generation")
-        self.active = Session(uuid.uuid4().hex, request, loop, tick)
+        self.active = Session(uuid.uuid4().hex, request, loop, tick, tick + self.startup_seconds)
         # Store canonical UUID for the public session identity.
         self.active.session_id = str(uuid.UUID(hex=self.active.session_id))
         if len(self._order) == self._order.maxlen:
@@ -256,7 +264,8 @@ class OfflineSupervisor:
             raise ProtocolError("Invalid readiness evidence")
         if type(entry_id) is not int or current.entry_id is None or entry_id != current.entry_id:
             raise ProtocolError("Readiness does not match MPV file entry")
-        if current.state == "starting" and tick - current.started_at >= self.startup_seconds:
+        self._ordered_tick(tick)
+        if current.state == "starting" and tick >= current.startup_deadline:
             self._finish("failed", "startup_timeout")
             raise ProtocolError("MPV startup deadline expired")
         current.observed_progress |= progressed
@@ -268,8 +277,9 @@ class OfflineSupervisor:
     @serialized
     def expire_startup(self, *, now: float | None = None) -> dict | None:
         tick = self._now(now)
+        self._ordered_tick(tick)
         if (self.active is not None and self.active.state == "starting"
-                and tick - self.active.started_at >= self.startup_seconds):
+                and tick >= self.active.startup_deadline):
             return self._finish("failed", "startup_timeout")
         return None
 

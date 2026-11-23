@@ -266,6 +266,94 @@ class StateTests(unittest.TestCase):
             self.engine.end_file(first, 5, "eof")
         self.assertEqual(self.engine.snapshot(second)["state"], "starting")
 
+    def test_fractional_startup_deadline_all_transitions(self):
+        for action in ("duplicate", "readiness", "expiry"):
+            with self.subTest(action=action):
+                engine = OfflineSupervisor()
+                request = StartRequest(ident(), self.item, "revision_1", 42)
+                session = engine.begin(request, self.grant, now=2.001)["session_id"]
+                engine.observe_file(session, 5)
+                deadline = engine.active.startup_deadline
+                self.assertEqual(deadline, 32.001)
+                if action == "duplicate":
+                    with self.assertRaisesRegex(ProtocolError, "deadline"):
+                        engine.begin(request, self.grant, now=deadline)
+                elif action == "readiness":
+                    with self.assertRaisesRegex(ProtocolError, "deadline"):
+                        engine.observe_readiness(
+                            session, entry_id=5, progressed=True,
+                            surface_ready=True, now=deadline)
+                else:
+                    self.assertEqual(engine.expire_startup(now=deadline)["reason"],
+                                     "startup_timeout")
+                self.assertIsNone(engine.active)
+                self.assertEqual(engine.last_terminal["reason"], "startup_timeout")
+
+    def test_backwards_evidence_rejected_without_latching(self):
+        session = self.begin()
+        self.engine.observe_file(session, 5)
+        self.engine.observe_readiness(session, entry_id=5, progressed=True, now=8)
+        with self.assertRaisesRegex(ProtocolError, "Backward"):
+            self.engine.observe_readiness(session, entry_id=5, surface_ready=True, now=7)
+        self.assertEqual(self.engine.snapshot(session)["state"], "starting")
+        self.assertFalse(self.engine.active.observed_surface)
+        self.assertTrue(self.engine.observe_readiness(
+            session, entry_id=5, surface_ready=True, now=9)["ready"])
+
+    def test_pre_session_evidence_rejected(self):
+        session = self.begin()
+        self.engine.observe_file(session, 5)
+        with self.assertRaisesRegex(ProtocolError, "Backward"):
+            self.engine.observe_readiness(
+                session, entry_id=5, progressed=True, surface_ready=True, now=0.999)
+        self.assertFalse(self.engine.active.observed_progress)
+        self.assertFalse(self.engine.active.observed_surface)
+
+    def test_backward_duplicate_and_expiry_do_not_mutate(self):
+        session = self.begin()
+        with self.assertRaisesRegex(ProtocolError, "Backward"):
+            self.engine.begin(self.start, self.grant, now=0.5)
+        with self.assertRaisesRegex(ProtocolError, "Backward"):
+            self.engine.expire_startup(now=0.5)
+        self.assertEqual(self.engine.snapshot(session)["state"], "starting")
+        self.assertIsNone(self.engine.expire_startup(now=2))
+
+    def test_stale_readiness_after_timer_tick_rejected(self):
+        session = self.begin()
+        self.engine.observe_file(session, 5)
+        self.assertIsNone(self.engine.expire_startup(now=5))
+        with self.assertRaisesRegex(ProtocolError, "Backward"):
+            self.engine.observe_readiness(session, entry_id=5, progressed=True, now=4)
+        self.assertFalse(self.engine.active.observed_progress)
+
+    def test_forced_ordered_race_rejects_older_evidence(self):
+        import threading
+        gate = threading.Event()
+        results = []
+        session = self.begin()
+        self.engine.observe_file(session, 5)
+        def later():
+            self.engine.observe_readiness(session, entry_id=5, progressed=True, now=8)
+            gate.set()
+        def earlier():
+            if not gate.wait(3):
+                results.append("timeout")
+                return
+            try:
+                self.engine.observe_readiness(session, entry_id=5, surface_ready=True, now=7)
+                results.append("accepted")
+            except ProtocolError:
+                results.append("rejected")
+        threads = [threading.Thread(target=later), threading.Thread(target=earlier)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=3)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(results, ["rejected"])
+        self.assertFalse(self.engine.active.observed_surface)
+        self.assertEqual(self.engine.snapshot(session)["state"], "starting")
+
 
 if __name__ == "__main__":
     unittest.main()
