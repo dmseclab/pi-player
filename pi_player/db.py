@@ -47,6 +47,33 @@ def rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def install_playback_generation(conn: sqlite3.Connection) -> None:
+    """Fence each start/stop command within its existing SQLite transaction.
+
+    A trigger rather than wall-clock timestamps protects consecutive changes
+    in the same second. It also covers any future writer using the existing
+    playback_state state/playlist_id fields. This helper is idempotent.
+    """
+    ensure_column(conn, "playback_state", "playback_generation",
+                  "INTEGER NOT NULL DEFAULT 0")
+    conn.execute("""
+        CREATE TRIGGER IF NOT EXISTS playback_state_bump_generation
+        AFTER UPDATE OF state, playlist_id ON playback_state
+        FOR EACH ROW
+        BEGIN
+            SELECT CASE
+                WHEN typeof(OLD.playback_generation) != 'integer'
+                     OR OLD.playback_generation < 0
+                     OR OLD.playback_generation >= 9223372036854775807
+                THEN RAISE(ABORT, 'Invalid playback generation')
+            END;
+            UPDATE playback_state
+               SET playback_generation = OLD.playback_generation + 1
+             WHERE id = NEW.id;
+        END
+    """)
+
+
 def init_db() -> None:
     ensure_runtime_dirs()
     # Rebuild only the legacy CHECK constraint, keeping every existing column.
@@ -148,6 +175,7 @@ def init_db() -> None:
         ensure_column(conn, "assets", "pdf_metadata_error", "TEXT")
         ensure_column(conn, "assets", "video_muted", "INTEGER NOT NULL DEFAULT 1")
         ensure_column(conn, "assets", "video_loop", "INTEGER NOT NULL DEFAULT 0")
+        install_playback_generation(conn)
         conn.execute(
             "INSERT OR IGNORE INTO playback_state (id, state, updated_at) VALUES (1, 'stopped', ?)",
             (now_iso(),),

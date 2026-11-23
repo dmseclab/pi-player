@@ -109,6 +109,7 @@ def lookup_video(conn: sqlite3.Connection, item_id: str, *,
                    pi.position, pi.duration_seconds,
                    p.id AS playlist_id, p.updated_at AS playlist_updated, p.is_active,
                    ps.state AS playback_state, ps.updated_at AS playback_updated,
+                   ps.playback_generation,
                    a.type AS asset_type, a.storage_path, a.mime_type,
                    a.size_bytes, a.checksum_sha256, a.updated_at AS asset_updated,
                    a.display_mode, a.video_muted, a.video_loop, a.deleted_at
@@ -129,6 +130,8 @@ def lookup_video(conn: sqlite3.Connection, item_id: str, *,
     names = [c[0] for c in cursor.description]
     row = dict(zip(names, rows[0]))
     if (row["enabled"] != 1 or row["asset_type"] != "video"
+            or type(row["playback_generation"]) is not int
+            or row["playback_generation"] < 0
             or not _allowed_schedule(row, now)):
         raise BrokerError("Video item not currently eligible")
     asset_id = row["asset_id"]
@@ -150,6 +153,7 @@ def lookup_video(conn: sqlite3.Connection, item_id: str, *,
         raise BrokerError("Missing immutable media identity metadata")
     identity_fields = [row[key] for key in (
         "playlist_id", "playlist_updated", "playback_state", "playback_updated",
+        "playback_generation",
         "item_id", "item_updated", "position", "duration_seconds",
         "asset_id", "asset_updated", "enabled", "schedule_enabled",
         "schedule_mode", "schedule_start_date", "schedule_end_date",

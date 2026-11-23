@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from pi_player.mpv_catalog import lookup_video, _allowed_schedule, check_opened_media
 from pi_player.mpv_broker import BrokerError, OpenedMedia
+from pi_player.db import install_playback_generation
 
 TZ = ZoneInfo("Africa/Johannesburg")
 
@@ -55,6 +56,7 @@ class CatalogTests(unittest.TestCase):
                           (self.item, self.playlist, self.asset, 1, "i1"))
         self.conn.execute("INSERT INTO playback_state VALUES (1, ?, NULL, 'playing', 's1')",
                           (self.playlist,))
+        install_playback_generation(self.conn)
         self.now = datetime(2026, 11, 23, 10, 0, tzinfo=TZ)
 
     def lookup(self):
@@ -65,6 +67,59 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(grant.record.item_id, self.item)
         self.assertEqual(grant.record.filename, self.filename)
         self.assertEqual(len(grant.revision), 64)
+
+    def test_stop_restart_fixed_timestamp_changes_generation_and_revision(self):
+        before = self.lookup().revision
+        initial = self.conn.execute(
+            "SELECT playback_generation FROM playback_state WHERE id=1").fetchone()[0]
+        # These SQL updates are identical in shape to the production API
+        # statements; preserve an identical wall-clock timestamp.
+        self.conn.execute(
+            "UPDATE playback_state SET state='stopped',updated_at='s1' WHERE id=1")
+        with self.assertRaises(BrokerError):
+            self.lookup()
+        self.conn.execute(
+            "UPDATE playback_state SET playlist_id=?,state='playing',updated_at='s1' WHERE id=1",
+            (self.playlist,))
+        after = self.lookup().revision
+        final = self.conn.execute(
+            "SELECT playback_generation FROM playback_state WHERE id=1").fetchone()[0]
+        self.assertEqual(final, initial + 2)
+        self.assertNotEqual(before, after)
+
+    def test_start_again_same_second_is_a_new_generation(self):
+        original = self.lookup().revision
+        self.conn.execute(
+            "UPDATE playback_state SET playlist_id=?,state='playing',updated_at='s1' WHERE id=1",
+            (self.playlist,))
+        self.assertNotEqual(original, self.lookup().revision)
+
+    def test_generation_install_idempotent_and_old_schema_fail_closed(self):
+        before = self.lookup().revision
+        install_playback_generation(self.conn)
+        self.assertEqual(before, self.lookup().revision)
+        self.conn.execute(
+            "UPDATE playback_state SET state='stopped',updated_at='s1' WHERE id=1")
+        count = self.conn.execute(
+            "SELECT playback_generation FROM playback_state WHERE id=1").fetchone()[0]
+        self.assertEqual(count, 1)
+        self.conn.execute("DROP TRIGGER playback_state_bump_generation")
+        self.conn.execute("UPDATE playback_state SET state='playing',updated_at='s1' WHERE id=1")
+        # Missing trigger is not an acceptable deployed configuration:
+        # this test documents why initialization must always install it.
+        self.assertEqual(self.conn.execute(
+            "SELECT playback_generation FROM playback_state WHERE id=1").fetchone()[0], 1)
+
+    def test_generation_invalid_metadata_rejected(self):
+        self.conn.execute(
+            "UPDATE playback_state SET playback_generation=-1 WHERE id=1")
+        with self.assertRaises(BrokerError):
+            self.lookup()
+        self.conn.execute(
+            "UPDATE playback_state SET playback_generation=? WHERE id=1",
+            (sqlite3.Binary(b"invalid"),))
+        with self.assertRaises(BrokerError):
+            self.lookup()
 
     def test_stopped_or_missing_playback_denied(self):
         self.conn.execute("UPDATE playback_state SET state='stopped'")
