@@ -105,10 +105,34 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(count, 1)
         self.conn.execute("DROP TRIGGER playback_state_bump_generation")
         self.conn.execute("UPDATE playback_state SET state='playing',updated_at='s1' WHERE id=1")
-        # Missing trigger is not an acceptable deployed configuration:
-        # this test documents why initialization must always install it.
+        # Missing trigger must deny playback even after returning to playing
+        # with the same wall-clock timestamp.
         self.assertEqual(self.conn.execute(
             "SELECT playback_generation FROM playback_state WHERE id=1").fetchone()[0], 1)
+        with self.assertRaises(BrokerError):
+            self.lookup()
+
+    def test_tampered_trigger_definition_denied(self):
+        self.conn.execute("DROP TRIGGER playback_state_bump_generation")
+        self.conn.execute("""
+            CREATE TRIGGER playback_state_bump_generation
+            AFTER UPDATE OF state, playlist_id ON playback_state
+            BEGIN SELECT 1; END
+        """)
+        with self.assertRaises(BrokerError):
+            self.lookup()
+        with self.assertRaises(RuntimeError):
+            install_playback_generation(self.conn)
+
+    def test_generation_migration_works_with_tuple_and_row_factories(self):
+        # setUp uses the standard sqlite tuple row factory. Reinstall after
+        # simulating the older schema; then check sqlite.Row separately.
+        self.assertEqual(self.conn.row_factory, None)
+        install_playback_generation(self.conn)
+        self.assertIsNotNone(self.lookup())
+        self.conn.row_factory = sqlite3.Row
+        install_playback_generation(self.conn)
+        self.assertIsNotNone(self.lookup())
 
     def test_generation_invalid_metadata_rejected(self):
         self.conn.execute(

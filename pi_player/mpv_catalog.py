@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, date, time, timedelta
 
 from pi_player.mpv_broker import BrokerError, MediaRecord
+from pi_player.db import playback_generation_trigger_valid
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,10 @@ def lookup_video(conn: sqlite3.Connection, item_id: str, *,
         raise BrokerError("Invalid trusted asset root")
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
         raise BrokerError("Timezone-aware trusted time required")
+    # A generation column without the audited transactional trigger is not
+    # sufficient: stop/restart could otherwise replay the previous revision.
+    if not playback_generation_trigger_valid(conn):
+        raise BrokerError("Playback generation migration is incomplete")
     try:
         cursor = conn.execute("""
             SELECT pi.id AS item_id, pi.asset_id, pi.enabled, pi.updated_at AS item_updated,

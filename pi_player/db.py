@@ -47,17 +47,8 @@ def rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def install_playback_generation(conn: sqlite3.Connection) -> None:
-    """Fence each start/stop command within its existing SQLite transaction.
-
-    A trigger rather than wall-clock timestamps protects consecutive changes
-    in the same second. It also covers any future writer using the existing
-    playback_state state/playlist_id fields. This helper is idempotent.
-    """
-    ensure_column(conn, "playback_state", "playback_generation",
-                  "INTEGER NOT NULL DEFAULT 0")
-    conn.execute("""
-        CREATE TRIGGER IF NOT EXISTS playback_state_bump_generation
+PLAYBACK_GENERATION_TRIGGER_SQL = """
+        CREATE TRIGGER playback_state_bump_generation
         AFTER UPDATE OF state, playlist_id ON playback_state
         FOR EACH ROW
         BEGIN
@@ -71,7 +62,34 @@ def install_playback_generation(conn: sqlite3.Connection) -> None:
                SET playback_generation = OLD.playback_generation + 1
              WHERE id = NEW.id;
         END
-    """)
+    """.strip()
+
+
+def playback_generation_trigger_valid(conn: sqlite3.Connection) -> bool:
+    """Require the installed trigger to match the audited generation policy."""
+    try:
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' "
+            "AND name='playback_state_bump_generation' AND tbl_name='playback_state'"
+        ).fetchone()
+    except sqlite3.Error:
+        return False
+    return row is not None and row[0] == PLAYBACK_GENERATION_TRIGGER_SQL
+
+
+def install_playback_generation(conn: sqlite3.Connection) -> None:
+    """Fence each start/stop command within its existing SQLite transaction.
+
+    A trigger rather than wall-clock timestamps protects consecutive changes
+    in the same second. It also covers any future writer using the existing
+    playback_state state/playlist_id fields. This helper is idempotent.
+    """
+    ensure_column(conn, "playback_state", "playback_generation",
+                  "INTEGER NOT NULL DEFAULT 0")
+    conn.execute("CREATE TRIGGER IF NOT EXISTS " +
+                 PLAYBACK_GENERATION_TRIGGER_SQL[len("CREATE TRIGGER "):])
+    if not playback_generation_trigger_valid(conn):
+        raise RuntimeError("Playback generation trigger is absent or invalid")
 
 
 def init_db() -> None:
@@ -208,7 +226,7 @@ def set_default(conn: sqlite3.Connection, key: str, value: str) -> None:
 
 
 def ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
-    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in columns:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
