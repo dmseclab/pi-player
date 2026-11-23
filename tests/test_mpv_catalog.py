@@ -138,7 +138,7 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaises(BrokerError):
             self.lookup()
         self.conn.execute("UPDATE playback_state SET playlist_id=?", (self.playlist,))
-        self.conn.execute("INSERT INTO playback_state VALUES (2, ?, NULL, 'playing', 's2')",
+        self.conn.execute("INSERT INTO playback_state (id,playlist_id,item_id,state,updated_at) VALUES (2, ?, NULL, 'playing', 's2')",
                           (self.playlist,))
         with self.assertRaises(BrokerError):
             self.lookup()
