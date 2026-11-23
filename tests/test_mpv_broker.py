@@ -116,6 +116,82 @@ class BrokerTests(unittest.TestCase):
         with self.assertRaises(BrokerError):
             self.broker.open_video(self.a, self.lease, self.record)
 
+    def test_close_waits_until_descriptor_relative_open_completes(self):
+        import threading
+        from unittest.mock import patch
+        acquired = threading.Event()
+        allow_open = threading.Event()
+        close_finished = threading.Event()
+        errors = []
+        opened = []
+        real_open = os.open
+        root_fd = self.broker._root_fd
+
+        def suspended_open(path, flags, *args, **kwargs):
+            if path == "clip.mp4" and kwargs.get("dir_fd") == root_fd:
+                acquired.set()
+                if not allow_open.wait(timeout=3):
+                    raise RuntimeError("open gate timed out")
+            return real_open(path, flags, *args, **kwargs)
+
+        def reader():
+            try:
+                opened.append(self.broker.open_video(self.a, self.lease, self.record))
+            except BaseException as exc:
+                errors.append(exc)
+
+        def closer():
+            self.broker.close()
+            close_finished.set()
+
+        with patch("pi_player.mpv_broker.os.open", side_effect=suspended_open):
+            worker = threading.Thread(target=reader)
+            worker.start()
+            self.assertTrue(acquired.wait(3), "reader did not enter open")
+            shutdown = threading.Thread(target=closer)
+            shutdown.start()
+            try:
+                self.assertFalse(close_finished.wait(0.1),
+                                 "shutdown closed the anchor before open completed")
+            finally:
+                allow_open.set()
+                worker.join(timeout=3)
+                shutdown.join(timeout=3)
+        self.assertFalse(worker.is_alive())
+        self.assertFalse(shutdown.is_alive())
+        self.assertFalse(errors, repr(errors))
+        self.assertTrue(close_finished.is_set())
+        self.assertEqual(os.read(opened[0].fd, 4), b"data")
+        opened[0].close()
+        with self.assertRaises(BrokerError):
+            self.broker.open_video(self.a, self.lease, self.record)
+
+    def test_failed_root_fstat_closes_descriptor(self):
+        from unittest.mock import patch
+        import errno
+        real_open = os.open
+        acquired = []
+        def capture_open(*args, **kwargs):
+            fd = real_open(*args, **kwargs)
+            acquired.append(fd)
+            return fd
+        with patch("pi_player.mpv_broker.os.open", side_effect=capture_open):
+            with patch("pi_player.mpv_broker.os.fstat",
+                       side_effect=OSError(errno.EIO, "injected fstat fault")):
+                with self.assertRaises(BrokerError):
+                    OfflineMediaBroker(self.tmp.name, kiosk_uid=os.getuid(),
+                                       api_uid=os.getuid() + 10000)
+        self.assertEqual(len(acquired), 1)
+        with self.assertRaises(OSError):
+            os.fstat(acquired[0])
+
+    def test_close_is_idempotent_and_opened_leaf_survives(self):
+        opened = self.broker.open_video(self.a, self.lease, self.record)
+        self.broker.close()
+        self.broker.close()
+        self.assertEqual(os.read(opened.fd, 4), b"data")
+        opened.close()
+
     def test_invalid_root_rejected(self):
         with self.assertRaises(BrokerError):
             OfflineMediaBroker("relative/path", kiosk_uid=100, api_uid=101)

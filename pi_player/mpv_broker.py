@@ -11,6 +11,7 @@ import os
 import socket
 import stat
 import struct
+import threading
 import uuid
 from dataclasses import dataclass, field
 
@@ -120,19 +121,30 @@ class OfflineMediaBroker:
             raise BrokerError("Media root must be an absolute trusted directory")
         self.kiosk_uid = kiosk_uid
         self.api_uid = api_uid
+        self._fd_lock = threading.Lock()
+        self._root_fd = -1
         flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
         flags |= getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        root_fd = -1
         try:
-            self._root_fd = os.open(root, flags)
-            if not stat.S_ISDIR(os.fstat(self._root_fd).st_mode):
+            root_fd = os.open(root, flags)
+            if not stat.S_ISDIR(os.fstat(root_fd).st_mode):
                 raise BrokerError("Media root is not a directory")
+            self._root_fd = root_fd
+            root_fd = -1
         except OSError as exc:
             raise BrokerError("Cannot open trusted media root") from exc
+        finally:
+            if root_fd >= 0:
+                os.close(root_fd)
 
     def close(self) -> None:
-        if self._root_fd >= 0:
-            fd, self._root_fd = self._root_fd, -1
-            os.close(fd)
+        # The same lock protects the dirfd through openat acquisition.
+        # A returned leaf fd remains independent after close().
+        with self._fd_lock:
+            if self._root_fd >= 0:
+                fd, self._root_fd = self._root_fd, -1
+                os.close(fd)
 
     def __enter__(self):
         return self
@@ -162,12 +174,13 @@ class OfflineMediaBroker:
                 or type(record.enabled) is not bool or not record.enabled
                 or type(record.video) is not bool or not record.video):
             raise BrokerError("Catalog record not eligible for video")
-        if self._root_fd < 0:
-            raise BrokerError("Media broker has been closed")
         flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
         flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
         try:
-            fd = os.open(record.filename, flags, dir_fd=self._root_fd)
+            with self._fd_lock:
+                if self._root_fd < 0:
+                    raise BrokerError("Media broker has been closed")
+                fd = os.open(record.filename, flags, dir_fd=self._root_fd)
         except OSError as exc:
             raise BrokerError("Media file could not be opened safely") from exc
         try:
