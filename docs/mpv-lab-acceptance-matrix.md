@@ -47,3 +47,7 @@
 - No reversible lab installer changes; mixed-media screen tests, stress and hardware soak outstanding.
 
 **Simplification policy:** do not add a second administration UI or playlist system. The hybrid engine should be disabled unless explicitly selected for the lab. Only expand supporting modules when needed for process isolation, media authorization or recovery.
+
+## Read-only lab host inspection (future, not deployed)
+
+The development repository includes `pi_player/mpv_lab_probe.py`. Once the operator has authorized a lab inspection and manually installed a reviewed development copy on the lab host, run `python3 -m pi_player.mpv_lab_probe` to print a JSON report. This tool reads static service declarations, cgroup controllers, a Wayland runtime socket and available browser/MPV binaries; it **does not modify or start** anything. It cannot establish kernel health, prove compositor frame presentation, verify running process identities, validate recovery, or approve deployment. A shared `User=pi` configuration is reported as a blocker. Do not run on Construction.
