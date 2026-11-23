@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, date, time, timedelta
 
 from pi_player.mpv_broker import BrokerError, MediaRecord
-from pi_player.db import playback_generation_trigger_valid
+from pi_player.db import PLAYBACK_GENERATION_TRIGGER_SQL
 
 
 @dataclass(frozen=True)
@@ -101,10 +101,8 @@ def lookup_video(conn: sqlite3.Connection, item_id: str, *,
         raise BrokerError("Invalid trusted asset root")
     if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
         raise BrokerError("Timezone-aware trusted time required")
-    # A generation column without the audited transactional trigger is not
-    # sufficient: stop/restart could otherwise replay the previous revision.
-    if not playback_generation_trigger_valid(conn):
-        raise BrokerError("Playback generation migration is incomplete")
+    # The schema guard MUST execute inside the same SQLite statement/snapshot
+    # as eligibility. Never validate schema and grant from separate reads.
     try:
         cursor = conn.execute("""
             SELECT pi.id AS item_id, pi.asset_id, pi.enabled, pi.updated_at AS item_updated,
@@ -126,7 +124,14 @@ def lookup_video(conn: sqlite3.Connection, item_id: str, *,
                AND ps.state = 'playing'
                AND (SELECT COUNT(*) FROM playlists WHERE is_active = 1) = 1
                AND (SELECT COUNT(*) FROM playback_state) = 1
-        """, (item_id,))
+               AND EXISTS (
+                    SELECT 1 FROM sqlite_master
+                     WHERE type = 'trigger'
+                       AND name = 'playback_state_bump_generation'
+                       AND tbl_name = 'playback_state'
+                       AND sql = ?
+               )
+        """, (item_id, PLAYBACK_GENERATION_TRIGGER_SQL))
         rows = cursor.fetchall()
     except sqlite3.Error as exc:
         raise BrokerError("Catalog unavailable or not initialized") from exc

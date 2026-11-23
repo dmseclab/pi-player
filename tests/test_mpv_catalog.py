@@ -134,6 +134,51 @@ class CatalogTests(unittest.TestCase):
         install_playback_generation(self.conn)
         self.assertIsNotNone(self.lookup())
 
+    def test_trigger_repair_revokes_old_same_second_revision(self):
+        prior = self.lookup().revision
+        self.conn.execute("DROP TRIGGER playback_state_bump_generation")
+        self.conn.execute("UPDATE playback_state SET state='stopped',updated_at='s1' WHERE id=1")
+        with self.assertRaises(BrokerError):
+            self.lookup()
+        self.conn.execute("UPDATE playback_state SET state='playing',updated_at='s1' WHERE id=1")
+        with self.assertRaises(BrokerError):
+            self.lookup()
+        previous = self.conn.execute(
+            "SELECT playback_generation FROM playback_state WHERE id=1").fetchone()[0]
+        install_playback_generation(self.conn)
+        updated = self.conn.execute(
+            "SELECT playback_generation FROM playback_state WHERE id=1").fetchone()[0]
+        self.assertEqual(updated, previous + 1)
+        self.assertNotEqual(prior, self.lookup().revision)
+        install_playback_generation(self.conn)
+        self.assertEqual(self.lookup().revision, self.lookup().revision)
+        self.assertEqual(self.conn.execute(
+            "SELECT playback_generation FROM playback_state WHERE id=1").fetchone()[0], updated)
+
+    def test_failed_trigger_repair_rolls_back_and_remains_denied(self):
+        self.conn.execute("DROP TRIGGER playback_state_bump_generation")
+        self.conn.execute("UPDATE playback_state SET playback_generation=9223372036854775807")
+        with self.assertRaises(RuntimeError):
+            install_playback_generation(self.conn)
+        self.assertFalse(self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='playback_state_bump_generation'").fetchone())
+        with self.assertRaises(BrokerError):
+            self.lookup()
+
+    def test_catalog_lookup_single_statement_schema_snapshot(self):
+        # sqlite_master check is part of the eligibility statement. This
+        # distinguishes the fix from the old separate preflight read.
+        queries = []
+        self.conn.set_trace_callback(queries.append)
+        try:
+            self.assertIsNotNone(self.lookup())
+        finally:
+            self.conn.set_trace_callback(None)
+        selects = [q for q in queries if q.lstrip().upper().startswith("SELECT")]
+        self.assertEqual(len(selects), 1, selects)
+        self.assertIn("sqlite_master", selects[0])
+        self.assertIn("playback_state_bump_generation", selects[0])
+
     def test_generation_invalid_metadata_rejected(self):
         self.conn.execute(
             "UPDATE playback_state SET playback_generation=-1 WHERE id=1")

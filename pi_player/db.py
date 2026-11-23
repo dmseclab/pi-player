@@ -84,12 +84,51 @@ def install_playback_generation(conn: sqlite3.Connection) -> None:
     in the same second. It also covers any future writer using the existing
     playback_state state/playlist_id fields. This helper is idempotent.
     """
-    ensure_column(conn, "playback_state", "playback_generation",
-                  "INTEGER NOT NULL DEFAULT 0")
-    conn.execute("CREATE TRIGGER IF NOT EXISTS " +
-                 PLAYBACK_GENERATION_TRIGGER_SQL[len("CREATE TRIGGER "):])
-    if not playback_generation_trigger_valid(conn):
-        raise RuntimeError("Playback generation trigger is absent or invalid")
+    # One SQLite write transaction covers detecting a missing trigger,
+    # invalidating earlier grants and creating the replacement trigger.
+    # SAVEPOINT nests safely within init_db()'s existing transaction.
+    conn.execute("SAVEPOINT pi_player_generation_install")
+    try:
+        had_column = "playback_generation" in {
+            row[1] for row in conn.execute("PRAGMA table_info(playback_state)")
+        }
+        ensure_column(conn, "playback_state", "playback_generation",
+                      "INTEGER NOT NULL DEFAULT 0")
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' "
+            "AND name='playback_state_bump_generation' AND tbl_name='playback_state'"
+        ).fetchone()
+        if row is None:
+            if had_column:
+                # Repair is a revocation event, not just schema recreation.
+                # Existing pre-repair revisions must never become valid again.
+                conn.execute("""
+                    UPDATE playback_state
+                       SET playback_generation = playback_generation + 1
+                     WHERE id = 1
+                       AND typeof(playback_generation) = 'integer'
+                       AND playback_generation >= 0
+                       AND playback_generation < 9223372036854775807
+                """)
+                invalid = conn.execute("""
+                    SELECT COUNT(*) FROM playback_state
+                     WHERE id = 1 AND (typeof(playback_generation) != 'integer'
+                         OR playback_generation < 0
+                         OR playback_generation >= 9223372036854775807)
+                """).fetchone()[0]
+                if invalid:
+                    raise RuntimeError("Cannot safely repair playback generation")
+            conn.execute(PLAYBACK_GENERATION_TRIGGER_SQL)
+        elif row[0] != PLAYBACK_GENERATION_TRIGGER_SQL:
+            raise RuntimeError("Playback generation trigger is absent or invalid")
+        if not playback_generation_trigger_valid(conn):
+            raise RuntimeError("Playback generation trigger is absent or invalid")
+    except BaseException:
+        conn.execute("ROLLBACK TO SAVEPOINT pi_player_generation_install")
+        conn.execute("RELEASE SAVEPOINT pi_player_generation_install")
+        raise
+    else:
+        conn.execute("RELEASE SAVEPOINT pi_player_generation_install")
 
 
 def init_db() -> None:
