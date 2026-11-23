@@ -123,6 +123,7 @@ class WalGenerationTests(unittest.TestCase):
         self.assertEqual(self.lookup(self.a).revision, before)
         self.assertEqual(self.generation(self.a), 0)
         self.drop_and_replay()
+        self.b.execute("BEGIN")
         install_playback_generation(self.b)
         # Until commit, the other reader must not observe a partial repair.
         with self.assertRaises(BrokerError):
