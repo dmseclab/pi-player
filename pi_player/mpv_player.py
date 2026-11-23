@@ -10,7 +10,10 @@ import math
 import os
 import socket
 import stat
-import fcntl
+try:
+    import fcntl
+except ImportError:  # Windows development machines cannot launch Linux MPV.
+    fcntl = None
 import subprocess
 import tempfile
 import threading
@@ -132,7 +135,7 @@ class MpvPlayer:
                 raise PermissionError("MPV must run as the unprivileged kiosk account")
             if not self._retire_exited():
                 raise RuntimeError("An MPV session is already running")
-            if (not isinstance(received, ReceivedVideo) or received.fd < 3
+            if (fcntl is None or not isinstance(received, ReceivedVideo) or received.fd < 3
                     or not Path("/proc/self/fd").is_dir()):
                 raise ValueError("Invalid Linux received media descriptor")
             try:
@@ -149,46 +152,46 @@ class MpvPlayer:
                 pass_fds=(received.fd,))
 
     def _start_verified(self, video: str, *, muted: bool,
-                        loop: bool, pass_fds: tuple[int, ...]) -> str:
+                    loop: bool, pass_fds: tuple[int, ...]) -> str:
         """Called only while self._lock is held, after media preflight."""
         runtime_value = os.environ.get("XDG_RUNTIME_DIR")
-            if not runtime_value:
-                raise RuntimeError("Kiosk XDG_RUNTIME_DIR is missing")
-            runtime = Path(runtime_value)
-            if not runtime.is_absolute() or not runtime.is_dir() or runtime.stat().st_uid != os.geteuid():
-                raise RuntimeError("Kiosk XDG_RUNTIME_DIR is missing or owned by a different account")
-            ipc_dir = tempfile.TemporaryDirectory(prefix="pi-player-mpv-", dir=runtime)
-            ipc = Path(ipc_dir.name) / "control.sock"
-            args = [
-                self.mpv_binary, "--no-config", "--no-terminal",
-                "--profile=fast", "--vo=gpu", "--gpu-api=opengl",
-                "--gpu-context=wayland", "--hwdec=no", "--keep-open=no",
-                f"--input-ipc-server={ipc}",
-                "--mute=yes" if muted else "--mute=no",
-                "--loop-file=inf" if loop else "--loop-file=no",
-                "--", str(video),
-            ]
+        if not runtime_value:
+            raise RuntimeError("Kiosk XDG_RUNTIME_DIR is missing")
+        runtime = Path(runtime_value)
+        if not runtime.is_absolute() or not runtime.is_dir() or runtime.stat().st_uid != os.geteuid():
+            raise RuntimeError("Kiosk XDG_RUNTIME_DIR is missing or owned by a different account")
+        ipc_dir = tempfile.TemporaryDirectory(prefix="pi-player-mpv-", dir=runtime)
+        ipc = Path(ipc_dir.name) / "control.sock"
+        args = [
+            self.mpv_binary, "--no-config", "--no-terminal",
+            "--profile=fast", "--vo=gpu", "--gpu-api=opengl",
+            "--gpu-context=wayland", "--hwdec=no", "--keep-open=no",
+            f"--input-ipc-server={ipc}",
+            "--mute=yes" if muted else "--mute=no",
+            "--loop-file=inf" if loop else "--loop-file=no",
+            "--", str(video),
+        ]
+        try:
+            process = subprocess.Popen(
+                args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
+                pass_fds=pass_fds,
+            )
+        except Exception:
             try:
-                process = subprocess.Popen(
-                    args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
-                    pass_fds=pass_fds,
-                )
-            except Exception:
-                try:
-                    ipc_dir.cleanup()
-                except OSError:
-                    pass
-                raise
-            self._process, self._ipc_dir, self._ipc_path = process, ipc_dir, ipc
-            self._session = uuid.uuid4().hex
-            self._ever_progressed = False
-            self._last_exit = None
-            self._last_position = None
-            self._last_valid_position = None
-            self._last_progress_at = None
-            self._poll_serial = self._applied_poll = 0
-            return self._session
+                ipc_dir.cleanup()
+            except OSError:
+                pass
+            raise
+        self._process, self._ipc_dir, self._ipc_path = process, ipc_dir, ipc
+        self._session = uuid.uuid4().hex
+        self._ever_progressed = False
+        self._last_exit = None
+        self._last_position = None
+        self._last_valid_position = None
+        self._last_progress_at = None
+        self._poll_serial = self._applied_poll = 0
+        return self._session
 
     def status(self, session: str) -> dict:
         """A positive time position alone does not prove playback is advancing.
