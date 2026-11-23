@@ -154,7 +154,7 @@ class OfflineSupervisor:
     """
 
     def __init__(self, *, startup_seconds: float = MAX_STARTUP_SECONDS):
-        if type(startup_seconds) not in (int, float) or not math.isfinite(startup_seconds) or not 0 < startup_seconds <= 60:
+        if type(startup_seconds) not in (int, float) or not 0 < startup_seconds <= 60 or not math.isfinite(startup_seconds):
             raise ValueError("Invalid startup deadline")
         self._lock = threading.RLock()
         self.startup_seconds = float(startup_seconds)

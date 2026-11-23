@@ -67,6 +67,15 @@ class StateTests(unittest.TestCase):
         result = self.engine.begin(self.start, self.grant, loop=loop, now=1)
         return result["session_id"]
 
+    def test_invalid_startup_duration_always_raises_value_error(self):
+        # Oversized integers must be rejected before math.isfinite converts to float.
+        for value in (10**1000, -(10**1000), True, False, 0,
+                      -1, 60.001, float("inf"), -float("inf"),
+                      float("nan"), "30", None):
+            with self.subTest(value=repr(value)), self.assertRaises(ValueError):
+                OfflineSupervisor(startup_seconds=value)
+        self.assertEqual(OfflineSupervisor(startup_seconds=30).startup_seconds, 30.0)
+
     def test_denied_or_expired_grants_never_create_session(self):
         for grant in (
             AuthorizedVideo(ident(), "revision_1", 100),
