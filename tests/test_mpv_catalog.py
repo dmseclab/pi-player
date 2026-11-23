@@ -5,6 +5,8 @@ import sqlite3
 import tempfile
 import unittest
 import uuid
+from unittest.mock import patch
+from types import SimpleNamespace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -28,11 +30,15 @@ class CatalogTests(unittest.TestCase):
         CREATE TABLE playlists (id TEXT, is_active INTEGER, updated_at TEXT);
         CREATE TABLE assets (id TEXT, type TEXT, storage_path TEXT,
             mime_type TEXT, size_bytes INTEGER, checksum_sha256 TEXT,
-            updated_at TEXT, deleted_at TEXT);
+            updated_at TEXT, deleted_at TEXT,
+            display_mode TEXT, video_muted INTEGER, video_loop INTEGER);
         CREATE TABLE playlist_items (id TEXT, playlist_id TEXT, asset_id TEXT,
             enabled INTEGER, updated_at TEXT, schedule_enabled INTEGER,
             schedule_mode TEXT, schedule_start_date TEXT, schedule_end_date TEXT,
-            schedule_weekdays TEXT, schedule_start_time TEXT, schedule_end_time TEXT);
+            schedule_weekdays TEXT, schedule_start_time TEXT, schedule_end_time TEXT,
+            position INTEGER, duration_seconds INTEGER);
+        CREATE TABLE playback_state (id INTEGER, playlist_id TEXT, item_id TEXT,
+            state TEXT, updated_at TEXT);
         """)
         self.item, self.asset, self.playlist = uid(), uid(), uid()
         self.filename = self.asset + ".mp4"
@@ -41,12 +47,14 @@ class CatalogTests(unittest.TestCase):
             stream.write(b"video-test-content")
         self.digest = hashlib.sha256(b"video-test-content").hexdigest()
         self.conn.execute("INSERT INTO playlists VALUES (?,1,'p1')", (self.playlist,))
-        self.conn.execute("INSERT INTO assets VALUES (?,?,?,?,?,?,?,NULL)",
+        self.conn.execute("INSERT INTO assets VALUES (?,?,?,?,?,?,?,NULL,'fit',1,0)",
                           (self.asset, "video", self.path, "video/mp4",
                            len(b"video-test-content"), self.digest, "a1"))
         self.conn.execute("""INSERT INTO playlist_items VALUES
-            (?,?,?,?,?,0,'recurring',NULL,NULL,NULL,NULL,NULL)""",
+            (?,?,?,?,?,0,'recurring',NULL,NULL,NULL,NULL,NULL,0,15)""",
                           (self.item, self.playlist, self.asset, 1, "i1"))
+        self.conn.execute("INSERT INTO playback_state VALUES (1, ?, NULL, 'playing', 's1')",
+                          (self.playlist,))
         self.now = datetime(2026, 11, 23, 10, 0, tzinfo=TZ)
 
     def lookup(self):
@@ -57,6 +65,47 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(grant.record.item_id, self.item)
         self.assertEqual(grant.record.filename, self.filename)
         self.assertEqual(len(grant.revision), 64)
+
+    def test_stopped_or_missing_playback_denied(self):
+        self.conn.execute("UPDATE playback_state SET state='stopped'")
+        with self.assertRaises(BrokerError):
+            self.lookup()
+        self.conn.execute("DELETE FROM playback_state")
+        with self.assertRaises(BrokerError):
+            self.lookup()
+
+    def test_ambiguous_or_inconsistent_playback_denied(self):
+        self.conn.execute("INSERT INTO playlists VALUES (?,1,'p2')", (uid(),))
+        with self.assertRaises(BrokerError):
+            self.lookup()
+        self.conn.execute("DELETE FROM playlists WHERE updated_at='p2'")
+        self.conn.execute("UPDATE playback_state SET playlist_id=?", (uid(),))
+        with self.assertRaises(BrokerError):
+            self.lookup()
+        self.conn.execute("UPDATE playback_state SET playlist_id=?", (self.playlist,))
+        self.conn.execute("INSERT INTO playback_state VALUES (2, ?, NULL, 'playing', 's2')",
+                          (self.playlist,))
+        with self.assertRaises(BrokerError):
+            self.lookup()
+
+    def test_same_second_playback_settings_change_revision(self):
+        previous = self.lookup().revision
+        self.conn.execute("UPDATE playlist_items SET duration_seconds=44")
+        changed = self.lookup().revision
+        self.assertNotEqual(previous, changed)
+        self.conn.execute("UPDATE assets SET video_loop=1")
+        loop = self.lookup().revision
+        self.assertNotEqual(changed, loop)
+        self.conn.execute("UPDATE assets SET video_muted=0")
+        muted = self.lookup().revision
+        self.assertNotEqual(loop, muted)
+        self.conn.execute("UPDATE playback_state SET updated_at='s2'")
+        self.assertNotEqual(muted, self.lookup().revision)
+
+    def test_bad_revision_blob_fails_closed(self):
+        self.conn.execute("UPDATE playlist_items SET updated_at=?", (sqlite3.Binary(b"bad"),))
+        with self.assertRaises(BrokerError):
+            self.lookup()
 
     def test_disabled_item_rejected(self):
         self.conn.execute("UPDATE playlist_items SET enabled=0")
@@ -118,6 +167,7 @@ class CatalogTests(unittest.TestCase):
         self.assertFalse(_allowed_schedule(
             item, datetime(2026, 11, 25, 1, 0, tzinfo=TZ)))
 
+    @unittest.skipUnless(hasattr(os, "pread"), "POSIX positional read required")
     def test_descriptor_checksum_and_mutation_detection(self):
         grant = self.lookup()
         fd = os.open(self.path, os.O_RDONLY)
@@ -128,6 +178,33 @@ class CatalogTests(unittest.TestCase):
                 out.write(b"tamper")
             with self.assertRaises(BrokerError):
                 check_opened_media(opened, grant)
+        finally:
+            opened.close()
+
+
+    @unittest.skipUnless(hasattr(os, "pread"), "POSIX positional read required")
+    def test_same_size_metadata_change_during_hash_is_denied(self):
+        grant = self.lookup()
+        fd = os.open(self.path, os.O_RDONLY)
+        opened = OpenedMedia(fd, self.item, grant.revision, "a"*64, 0, 0)
+        original = os.fstat
+        calls = 0
+        def changed_second_stat(target):
+            nonlocal calls
+            result = original(target)
+            if target == fd:
+                calls += 1
+                if calls == 2:
+                    return SimpleNamespace(
+                        st_dev=result.st_dev, st_ino=result.st_ino,
+                        st_size=result.st_size, st_mtime_ns=result.st_mtime_ns + 1,
+                        st_ctime_ns=result.st_ctime_ns + 1)
+            return result
+        try:
+            with patch("pi_player.mpv_catalog.os.fstat", side_effect=changed_second_stat):
+                with self.assertRaisesRegex(BrokerError, "changed during verification"):
+                    check_opened_media(opened, grant)
+            self.assertEqual(calls, 2)
         finally:
             opened.close()
 

@@ -13,7 +13,6 @@ import sqlite3
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, date, time, timedelta
-from pathlib import PurePath
 
 from pi_player.mpv_broker import BrokerError, MediaRecord
 
@@ -107,14 +106,20 @@ def lookup_video(conn: sqlite3.Connection, item_id: str, *,
                    pi.schedule_enabled, pi.schedule_mode, pi.schedule_start_date,
                    pi.schedule_end_date, pi.schedule_weekdays,
                    pi.schedule_start_time, pi.schedule_end_time,
+                   pi.position, pi.duration_seconds,
                    p.id AS playlist_id, p.updated_at AS playlist_updated, p.is_active,
+                   ps.state AS playback_state, ps.updated_at AS playback_updated,
                    a.type AS asset_type, a.storage_path, a.mime_type,
                    a.size_bytes, a.checksum_sha256, a.updated_at AS asset_updated,
-                   a.deleted_at
+                   a.display_mode, a.video_muted, a.video_loop, a.deleted_at
               FROM playlist_items AS pi
               JOIN playlists AS p ON p.id = pi.playlist_id
               JOIN assets AS a ON a.id = pi.asset_id
+              JOIN playback_state AS ps ON ps.id = 1 AND ps.playlist_id = p.id
              WHERE pi.id = ? AND p.is_active = 1 AND a.deleted_at IS NULL
+               AND ps.state = 'playing'
+               AND (SELECT COUNT(*) FROM playlists WHERE is_active = 1) = 1
+               AND (SELECT COUNT(*) FROM playback_state) = 1
         """, (item_id,))
         rows = cursor.fetchall()
     except sqlite3.Error as exc:
@@ -144,14 +149,19 @@ def lookup_video(conn: sqlite3.Connection, item_id: str, *,
             or type(size) is not int or size <= 0):
         raise BrokerError("Missing immutable media identity metadata")
     identity_fields = [row[key] for key in (
-        "playlist_id", "playlist_updated", "item_id", "item_updated",
+        "playlist_id", "playlist_updated", "playback_state", "playback_updated",
+        "item_id", "item_updated", "position", "duration_seconds",
         "asset_id", "asset_updated", "enabled", "schedule_enabled",
         "schedule_mode", "schedule_start_date", "schedule_end_date",
         "schedule_weekdays", "schedule_start_time", "schedule_end_time",
+        "display_mode", "video_muted", "video_loop",
         "storage_path", "mime_type", "size_bytes", "checksum_sha256")]
-    revision = hashlib.sha256(json.dumps(
-        identity_fields, separators=(",", ":"), ensure_ascii=True
-    ).encode("utf-8")).hexdigest()
+    try:
+        revision = hashlib.sha256(json.dumps(
+            identity_fields, separators=(",", ":"), ensure_ascii=True
+        ).encode("utf-8")).hexdigest()
+    except (TypeError, ValueError, UnicodeError) as exc:
+        raise BrokerError("Invalid catalog revision metadata") from exc
     return CatalogVideo(
         record=MediaRecord(item_id, filename, revision, True, True),
         checksum_sha256=digest, size_bytes=size, revision=revision)
@@ -175,7 +185,12 @@ def check_opened_media(opened, catalog: CatalogVideo) -> None:
             offset += len(block)
         if digest.hexdigest() != catalog.checksum_sha256:
             raise BrokerError("Media content differs from catalog checksum")
-        if os.fstat(opened.fd).st_size != catalog.size_bytes:
-            raise BrokerError("Media size changed during verification")
+        final = os.fstat(opened.fd)
+        identity_before = (info.st_dev, info.st_ino, info.st_size,
+                           info.st_mtime_ns, info.st_ctime_ns)
+        identity_after = (final.st_dev, final.st_ino, final.st_size,
+                          final.st_mtime_ns, final.st_ctime_ns)
+        if identity_before != identity_after:
+            raise BrokerError("Media object changed during verification")
     except OSError as exc:
         raise BrokerError("Unable to validate opened media") from exc
