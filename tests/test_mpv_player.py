@@ -51,6 +51,50 @@ class AdapterTests(unittest.TestCase):
             session = player.start(self.video)
         return player, fake, session
 
+    @unittest.skipUnless(os.name == "posix", "Linux descriptor-only adapter")
+    def test_received_fd_launch_uses_pass_fds_and_no_catalog_path(self):
+        import stat
+        from pi_player.mpv_fd_transport import ReceivedVideo
+        if not Path("/proc/self/fd").is_dir():
+            self.skipTest("Linux /proc required")
+        fd = os.open(self.video, os.O_RDONLY)
+        self.addCleanup(lambda: os.close(fd))
+        info = os.fstat(fd)
+        received = ReceivedVideo(fd, "item", "rev", info.st_ino, info.st_dev)
+        player = MpvPlayer(asset_dir=self.assets)
+        fake = FakeProcess()
+        with patch("pi_player.mpv_player.os.geteuid", return_value=os.getuid() or 1001), \
+             patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.root)}), \
+             patch("pi_player.mpv_player.subprocess.Popen", return_value=fake) as popen:
+            session = player.start_received_video(received)
+        args, kwargs = popen.call_args
+        self.assertEqual(kwargs["pass_fds"], (fd,))
+        self.assertEqual(args[0][-1], f"/proc/self/fd/{fd}")
+        self.assertNotIn(str(self.video), args[0])
+        self.assertFalse(kwargs["shell"] if "shell" in kwargs else False)
+        self.assertTrue(player.stop(session))
+
+    @unittest.skipUnless(os.name == "posix", "Linux descriptor-only adapter")
+    def test_received_descriptor_rejects_wrong_inode_and_writable_fd(self):
+        from pi_player.mpv_fd_transport import ReceivedVideo
+        if not Path("/proc/self/fd").is_dir():
+            self.skipTest("Linux /proc required")
+        fd = os.open(self.video, os.O_RDWR)
+        self.addCleanup(lambda: os.close(fd))
+        info = os.fstat(fd)
+        player = MpvPlayer(asset_dir=self.assets)
+        with patch("pi_player.mpv_player.os.geteuid", return_value=os.getuid() or 1001):
+            with self.assertRaises(ValueError):
+                player.start_received_video(
+                    ReceivedVideo(fd, "item", "rev", info.st_ino, info.st_dev))
+            readonly = os.open(self.video, os.O_RDONLY)
+            try:
+                with self.assertRaises(ValueError):
+                    player.start_received_video(
+                        ReceivedVideo(readonly, "item", "rev", info.st_ino+1, info.st_dev))
+            finally:
+                os.close(readonly)
+
     def test_paths(self):
         self.assertEqual(validate_video_path(self.video, self.assets), self.video)
         (self.root / "outside.mp4").write_bytes(b"dummy")

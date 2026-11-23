@@ -51,3 +51,7 @@
 ## Read-only lab host inspection (future, not deployed)
 
 The development repository includes `pi_player/mpv_lab_probe.py`. Once the operator has authorized a lab inspection and manually installed a reviewed development copy on the lab host, run `python3 -m pi_player.mpv_lab_probe` to print a JSON report. This tool reads static service declarations, cgroup controllers, a Wayland runtime socket and available browser/MPV binaries; it **does not modify or start** anything. It cannot establish kernel health, prove compositor frame presentation, verify running process identities, validate recovery, or approve deployment. A shared `User=pi` configuration is reported as a blocker. Do not run on Construction.
+
+## FD-backed MPV launch interface (offline)
+
+The existing `MpvPlayer` adapter now exposes `start_received_video(ReceivedVideo)`, which accepts a previously authenticated kiosk-side descriptor, validates its inode/device/regular-file/read-only status and launches MPV with `-- /proc/self/fd/N` while inheriting only that FD through `subprocess.Popen(pass_fds=...)`. The original path-based adapter stays intact for compatibility. Tests verify descriptor inheritance arguments and rejection of writable/mismatched file identities. This interface is **feature-disabled** and must not be wired into the installed kiosk until actual cgroup lifecycle and trusted compositor readiness are implemented; `/proc/self/fd` requires a functional Linux procfs. The caller retains ownership and closes the received descriptor after the spawn attempt.

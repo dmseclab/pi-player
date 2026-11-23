@@ -9,6 +9,8 @@ import json
 import math
 import os
 import socket
+import stat
+import fcntl
 import subprocess
 import tempfile
 import threading
@@ -17,6 +19,7 @@ import uuid
 from pathlib import Path
 
 from .config import ASSET_DIR
+from .mpv_fd_transport import ReceivedVideo
 
 VIDEO_SUFFIXES = frozenset({".mp4", ".webm"})
 
@@ -106,13 +109,49 @@ class MpvPlayer:
         return True
 
     def start(self, path: str | Path, *, muted: bool = True, loop: bool = False) -> str:
+        """Legacy offline path adapter; not the secure broker integration."""
         with self._lock:
             if os.geteuid() == 0:
                 raise PermissionError("MPV must run as the unprivileged kiosk account")
             if not self._retire_exited():
                 raise RuntimeError("An MPV session is already running")
             video = validate_video_path(path, self.asset_dir)
-            runtime_value = os.environ.get("XDG_RUNTIME_DIR")
+            return self._start_verified(str(video), muted=muted, loop=loop, pass_fds=())
+
+    def start_received_video(self, received: ReceivedVideo, *,
+                             muted: bool = True, loop: bool = False) -> str:
+        """Spawn using an authenticated, already-open media FD on Linux only.
+
+        The caller retains ownership of received.fd, and MUST close it after
+        start returns or raises. The child inherits only the selected media
+        descriptor using pass_fds; no supplied asset path is followed.
+        A real cgroup supervisor remains required before actual activation.
+        """
+        with self._lock:
+            if os.geteuid() == 0:
+                raise PermissionError("MPV must run as the unprivileged kiosk account")
+            if not self._retire_exited():
+                raise RuntimeError("An MPV session is already running")
+            if (not isinstance(received, ReceivedVideo) or received.fd < 3
+                    or not Path("/proc/self/fd").is_dir()):
+                raise ValueError("Invalid Linux received media descriptor")
+            try:
+                info = os.fstat(received.fd)
+                flags = fcntl.fcntl(received.fd, fcntl.F_GETFL)
+            except OSError as exc:
+                raise ValueError("Received media descriptor unavailable") from exc
+            if (not stat.S_ISREG(info.st_mode) or info.st_size <= 0
+                    or info.st_dev != received.device or info.st_ino != received.inode
+                    or (flags & os.O_ACCMODE) != os.O_RDONLY):
+                raise ValueError("Received media descriptor identity or mode mismatch")
+            return self._start_verified(
+                f"/proc/self/fd/{received.fd}", muted=muted, loop=loop,
+                pass_fds=(received.fd,))
+
+    def _start_verified(self, video: str, *, muted: bool,
+                        loop: bool, pass_fds: tuple[int, ...]) -> str:
+        """Called only while self._lock is held, after media preflight."""
+        runtime_value = os.environ.get("XDG_RUNTIME_DIR")
             if not runtime_value:
                 raise RuntimeError("Kiosk XDG_RUNTIME_DIR is missing")
             runtime = Path(runtime_value)
@@ -133,6 +172,7 @@ class MpvPlayer:
                 process = subprocess.Popen(
                     args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True,
+                    pass_fds=pass_fds,
                 )
             except Exception:
                 try:
