@@ -11,7 +11,7 @@ User=pi-player-broker
 Group=pi-player-mpv
 UMask=0007
 RuntimeDirectory=pi-player-mpv-broker
-RuntimeDirectoryMode=0700
+RuntimeDirectoryMode=0710
 WorkingDirectory=/opt/pi-player-rk
 Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/pi-player-rk/.venv/bin/python -m pi_player.mpv_broker_service --runtime-dir /run/pi-player-mpv-broker --database /var/lib/pi-player/pi_player.sqlite3 --assets /var/lib/pi-player/assets --api-user pi --kiosk-user pi-player-mpv

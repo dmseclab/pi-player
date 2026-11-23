@@ -17,7 +17,16 @@ class BrokerDaemonTests(unittest.TestCase):
         self.private.mkdir(mode=0o700)
 
     def test_private_runtime_directory_passes(self):
-        validate_runtime_directory(self.private)
+        validate_runtime_directory(self.private, kiosk_gid=os.getgid())
+
+    def test_group_traverse_only_mode_permitted(self):
+        self.private.chmod(0o710)
+        validate_runtime_directory(self.private, kiosk_gid=os.getgid())
+
+    def test_wrong_runtime_group_denied(self):
+        self.private.chmod(0o710)
+        with self.assertRaises(RuntimeError):
+            validate_runtime_directory(self.private, kiosk_gid=os.getgid()+1)
 
     def test_world_accessible_runtime_directory_denied(self):
         self.private.chmod(0o755)
@@ -28,7 +37,7 @@ class BrokerDaemonTests(unittest.TestCase):
         link = self.root / "link"
         link.symlink_to(self.private, target_is_directory=True)
         with self.assertRaises(RuntimeError):
-            validate_runtime_directory(link)
+            validate_runtime_directory(link, kiosk_gid=os.getgid())
 
     def test_shared_service_identities_block_start(self):
         with patch("pi_player.mpv_broker_service.identity", side_effect=[1001, 1001]), \

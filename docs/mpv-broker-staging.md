@@ -5,3 +5,7 @@ The unit `deploy/pi-player-mpv-broker.lab.service` is **not** part of the ordina
 **Current blocker:** `RuntimeDirectoryMode=0700` with broker-owned directory is intentionally inaccessible to the kiosk account. This is an explicit fail-closed configuration, not a working installation. The service must be revised and tested with tightly controlled shared group access before activation. No change to the existing `pi` service identity is required until the dedicated kiosk agent is proven. Do not deploy this unit as-is.
 
 The broker daemon is one-way and supplies only verified media FDs on a Unix socket. It does not control video, launch an MPV process or switch Wayland display surfaces. Real compositor verification and secure process lifecycle remain hard gates.
+
+## Restricted kiosk socket directory
+
+The proposed runtime directory is `0710`: only its broker owner can list or write it, kiosk agent group can traverse to the socket, and others have no access. The socket itself is `0660`, while `SO_PEERCRED` still verifies the kiosk UID. Broker validates the directory owner, group and exact permissions at startup. This remains an opt-in service template pending lab account/group, SQLite read ACL and compositor verification.

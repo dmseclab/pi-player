@@ -28,13 +28,14 @@ def identity(name: str) -> int:
     return pwd.getpwnam(name).pw_uid
 
 
-def validate_runtime_directory(directory: Path) -> None:
+def validate_runtime_directory(directory: Path, *, kiosk_gid: int) -> None:
     if not directory.is_absolute() or directory.is_symlink():
         raise RuntimeError("Absolute non-symlink socket directory required")
     info = directory.stat()
     if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
-            or (info.st_mode & 0o077) != 0):
-        raise RuntimeError("Broker runtime directory must be owned and private")
+            or info.st_gid != kiosk_gid
+            or (info.st_mode & 0o777) != 0o710):
+        raise RuntimeError("Broker runtime directory ownership/mode invalid")
 
 
 def run(*, directory: Path, database: Path, asset_root: Path,
@@ -44,7 +45,8 @@ def run(*, directory: Path, database: Path, asset_root: Path,
     if (broker_uid == 0 or len({api_uid, kiosk_uid, broker_uid}) != 3
             or not database.is_absolute() or not asset_root.is_absolute()):
         raise RuntimeError("Broker must use a third unprivileged account")
-    validate_runtime_directory(directory)
+    validate_runtime_directory(directory,
+                               kiosk_gid=pwd.getpwnam(kiosk_user).pw_gid)
     path = directory / "media.sock"
     if path.exists() or path.is_symlink():
         raise RuntimeError("Refusing to replace an existing broker socket")
