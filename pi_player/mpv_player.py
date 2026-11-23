@@ -166,6 +166,7 @@ class MpvPlayer:
             self.mpv_binary, "--no-config", "--no-terminal",
             "--profile=fast", "--vo=gpu", "--gpu-api=opengl",
             "--gpu-context=wayland", "--hwdec=no", "--keep-open=no",
+            "--fullscreen=yes",
             f"--input-ipc-server={ipc}",
             "--mute=yes" if muted else "--mute=no",
             "--loop-file=inf" if loop else "--loop-file=no",

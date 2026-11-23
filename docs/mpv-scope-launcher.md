@@ -5,3 +5,7 @@
 **Lab verification required:** The installed Debian/systemd version's `systemd-run --user --scope` must preserve the FD to the MPV process and expose a stable `ControlGroup`. `systemd-run` PID is a helper, not necessarily MPV's PID. Its scope must contain all descendants. The control group may disappear upon successful stop; a separate trusted systemd state reconciliation will be needed to treat absence as an empty confirmed scope. Never clear quarantine merely because the directory cannot be found. In-place file modifications and privileged scope manipulation remain outside these offline guarantees.
 
 This is a launcher building block, NOT a complete connected kiosk agent. Before activation, a real Wayland first-frame observer and host account/permissions migration must be validated. Keep Chromium as fallback.
+
+## Deterministic Wayland identity and fullscreen
+
+The scope launcher now passes `--wayland-app-id=pi-player-mpv-<uuidhex>` matching its transient scope unit identifier and `--fullscreen=yes`; the offline MPV adapter also requests fullscreen. This supports exact foreign-toplevel matching in the optional `wlrctl` focus adapter without depending on user-editable window titles. It does **not** prove ownership or actual first-frame presentation, and the compositor must be tested on labwc before enabling switching.

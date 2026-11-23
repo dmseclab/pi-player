@@ -18,6 +18,8 @@ class ScopeTests(unittest.TestCase):
         self.assertIn("--scope", argv)
         self.assertIn("--unit=" + unit, argv)
         self.assertEqual(argv[-1], "/proc/self/fd/9")
+        self.assertIn("--fullscreen=yes", argv)
+        self.assertIn("--wayland-app-id=" + unit[:-6], argv)
         self.assertNotIn("sh", argv)
 
     def test_scope_name_rejects_operator_commands(self):
