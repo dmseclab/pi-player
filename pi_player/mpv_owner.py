@@ -33,7 +33,7 @@ def _canonical_uuid(value: object, label: str) -> str:
 @dataclass(frozen=True)
 class OwnerLease:
     owner_id: str
-    epoch: str
+    epoch: str = __import__('dataclasses').field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,8 @@ class OfflineOwner:
         if not isinstance(lease, OwnerLease):
             raise OwnerError("Invalid owner lease")
         _canonical_uuid(lease.owner_id, "owner ID")
-        if type(lease.epoch) is not str or len(lease.epoch) != 64:
+        if (type(lease.epoch) is not str or len(lease.epoch) != 64
+                or any(ch not in "0123456789abcdef" for ch in lease.epoch)):
             raise OwnerError("Invalid owner epoch")
         current = self._lease
         if (current is None or lease.owner_id != current.owner_id
@@ -121,6 +122,22 @@ class OfflineOwner:
                     or self._slot.state != "reserved"):
                 raise OwnerError("Cannot bind child to renderer slot")
             self._slot = RendererSlot(slot_id, "running", child_id)
+
+    def acknowledge_late_spawn(self, slot_id: str, child_id: str) -> None:
+        """TRUSTED launcher only: account for a child after quarantine/takeover.
+
+        This is not an old-owner command. The kiosk's serialized launch
+        coordinator must bind the original slot to the original spawn attempt
+        and verify child identity. Never grant playback authority here.
+        """
+        with self._lock:
+            _canonical_uuid(slot_id, "slot ID")
+            _canonical_uuid(child_id, "child ID")
+            if (self._slot is None or self._slot.slot_id != slot_id
+                    or self._slot.state != "quarantined"
+                    or self._slot.child_id is not None):
+                raise OwnerError("Late child acknowledgement denied")
+            self._slot = RendererSlot(slot_id, "quarantined", child_id)
 
     def quarantine(self, slot_id: str) -> None:
         """TRUSTED supervisor: timeout, IPC loss, stop or unknown child state."""

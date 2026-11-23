@@ -62,6 +62,63 @@ class OwnerPolicyTests(unittest.TestCase):
         self.owner.confirm_exit(slot, child, group_empty=True)
         self.assertTrue(self.owner.reserve(next_owner))
 
+    def test_late_spawn_after_takeover_is_accounted_without_authority(self):
+        self.owner.reconcile_empty()
+        old = self.lease
+        slot = self.owner.reserve(old)
+        child = ident()
+        current = self.owner.replace_owner(ident())
+        with self.assertRaises(OwnerError):
+            self.owner.mark_spawned(old, slot, child)
+        self.owner.acknowledge_late_spawn(slot, child)
+        self.assertEqual(self.owner.snapshot()["slot_state"], "quarantined")
+        with self.assertRaises(OwnerError):
+            self.owner.reserve(current)
+        with self.assertRaises(OwnerError):
+            self.owner.cancel_unspawned(slot, launch_ruled_out=True)
+        with self.assertRaises(OwnerError):
+            self.owner.confirm_exit(slot, child, group_empty=False)
+        self.owner.confirm_exit(slot, child, group_empty=True)
+        self.assertTrue(self.owner.reserve(current))
+
+    def test_late_spawn_after_quarantine_is_accounted(self):
+        self.owner.reconcile_empty()
+        slot = self.owner.reserve(self.lease)
+        child = ident()
+        self.owner.quarantine(slot)
+        with self.assertRaises(OwnerError):
+            self.owner.mark_spawned(self.lease, slot, child)
+        self.owner.acknowledge_late_spawn(slot, child)
+        self.assertEqual(self.owner.snapshot()["slot_state"], "quarantined")
+        self.owner.confirm_exit(slot, child, group_empty=True)
+        self.assertTrue(self.owner.reserve(self.lease))
+
+    def test_late_spawn_cannot_rebind_or_clear_replacement(self):
+        self.owner.reconcile_empty()
+        first = self.owner.reserve(self.lease)
+        self.owner.quarantine(first)
+        child = ident()
+        self.owner.acknowledge_late_spawn(first, child)
+        with self.assertRaises(OwnerError):
+            self.owner.acknowledge_late_spawn(first, ident())
+        with self.assertRaises(OwnerError):
+            self.owner.confirm_exit(first, ident(), group_empty=True)
+        self.owner.confirm_exit(first, child, group_empty=True)
+        second = self.owner.reserve(self.lease)
+        with self.assertRaises(OwnerError):
+            self.owner.acknowledge_late_spawn(first, ident())
+        self.assertEqual(self.owner.snapshot()["slot_id"], second)
+
+    def test_epoch_redaction_and_malformed_unicode(self):
+        self.assertNotIn(self.lease.epoch, repr(self.lease))
+        self.assertNotIn(self.lease.epoch, repr(self.owner))
+        self.owner.reconcile_empty()
+        baseline = self.owner.snapshot()
+        for epoch in ("é" * 64, "G" * 64, "A" * 64, "0" * 63, "0" * 65):
+            with self.subTest(epoch=epoch), self.assertRaises(OwnerError):
+                self.owner.reserve(OwnerLease(self.lease.owner_id, epoch))
+            self.assertEqual(self.owner.snapshot(), baseline)
+
     def test_stale_exit_cannot_clear_new_slot(self):
         self.owner.reconcile_empty()
         first = self.owner.reserve(self.lease)
