@@ -28,7 +28,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from .config import ASSET_DIR
 from .db import db, get_setting
 from .main import app
-from .mpv_broker import OpenedMedia
+from .mpv_broker import BrokerError, OpenedMedia
 from .mpv_catalog import lookup_video, check_opened_media
 from .mpv_player import read_reply, renderer_arguments
 
@@ -169,7 +169,10 @@ class LabRenderer:
     def inspect(self):
         if self.proc is None or self.proc.poll() is not None:
             return "fallback"
-        if eligible(self.item_id) != self.grant:
+        try:
+            if eligible(self.item_id) != self.grant:
+                return "cancelled"
+        except (BrokerError, ValueError):
             return "cancelled"
         now = time.monotonic()
         pos = self.property("time-pos")
@@ -220,12 +223,16 @@ class LabRenderer:
 
 async def retire():
     global _renderer
-    if _renderer is None:
-        return not await asyncio.to_thread(any_mpv)
-    clean = await asyncio.to_thread(_renderer.retire)
-    if clean:
-        _renderer = None
-    return clean
+    try:
+        if _renderer is None:
+            return not await asyncio.to_thread(any_mpv)
+        clean = await asyncio.to_thread(_renderer.retire)
+        if clean:
+            _renderer = None
+        return clean
+    except Exception as exc:
+        LOG.warning("Lab MPV cleanup unverified: %s", type(exc).__name__)
+        return False
 
 
 async def read_message(ws, timeout):

@@ -122,6 +122,8 @@ function playCurrent(){
   if(typeof mpvLab !== 'undefined' && mpvLab.enabled()){
     mpvLab.stop();
     clearTimeout(timer);timer=null;
+    if(stopPdf)stopPdf();stopPdf=null;
+    cleanupCurrentVideo();clearWebsiteReload();closeDirectWindow();
     mpvTransition=mpvTransition.catch(()=>{}).then(async()=>{
       if(token!==generation)return;
       if(!await mpvLab.clean()){
@@ -169,7 +171,7 @@ function renderCurrent(token){
         if(token!==generation)return;
         if(!clean){report('error','MPV cleanup unverified');timer=setTimeout(playCurrent,5000);return;}
         if(result.state==='completed'){advance();return;}
-        if(result.state==='cancelled'){loadPlaylist();advanceSoon();return;}
+        if(result.state==='cancelled'){await loadPlaylist();if(token===generation)advanceSoon();return;}
         report('error','MPV failed; Chromium fallback');playVideo(item,durationMs,token);
       }).catch(()=>{if(token===generation){report('error','MPV control failure');timer=setTimeout(playCurrent,5000);}});
       return;

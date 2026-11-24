@@ -28,7 +28,7 @@ const mpvLab = (() => {
       if (action === 'start') active = {ws, finish};
       const arm = () => {
         clearTimeout(deadline);
-        deadline = setTimeout(() => finish({state:'unknown',clean:false}), 35000);
+        deadline = setTimeout(() => finish({state:'unknown',clean:false}), action==='check'?5000:35000);
       };
       arm();
       ws.onopen = () => {
