@@ -51,3 +51,9 @@ Avoid pasting unrelated process environment variables, tokens, passwords or priv
 First establish the real lab account/Wayland constraints from the read-only results. Then choose the simplest identity layout, prove the isolated MPV trial with physical recovery access, and only then wire the existing browser playlist to a single kiosk-owned renderer. Build a reversible lab installer for that exact layout and confirm source-unit/API/asset-data restore from a verified snapshot. **Only then** declare full mixed-media lab deployment testing ready.
 
 Avoid delivering a misleading green light merely because Python unit tests or standalone prototypes pass.
+
+## 24 November lab inspection and installation contract
+
+Read-only inspection confirmed the appliance account `pi-player` owns API, Chromium and labwc; seat0 is active, the user manager runs, and cgroup v2 is mounted. The live Wayland socket is `wayland-0` inside the account's private runtime directory. API health and both timers are healthy. MPV and FFmpeg exist; `wlrctl` is absent but an arm64 Debian trixie candidate is available. The local checkout is clean at `6527c36ad48702955f62ac923fed8916dfe52a67` on the legacy experimental branch; preserve it before syncing. No device changes performed.
+
+For the first isolated hardware trial, prefer the existing graphical account rather than migrating compositor ownership. This is not a decision to collapse broker security boundaries in the released integration. New-device provisioning must install and configure all required dependencies automatically; the installer now includes MPV, FFmpeg and wlrctl without enabling hybrid playback. Upgrade dependency handling, dynamic session discovery, secure integration, reversible deployment and clean-image acceptance are still release gates. No manual package installation may be a prerequisite for a released player.

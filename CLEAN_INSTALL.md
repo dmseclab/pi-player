@@ -98,3 +98,9 @@ sudo journalctl -u pi-player-api.service -b --no-pager -n 50
 Pi Player web administration currently uses HTTP on port 8000 and cookie-based login. Restrict it to a trusted management/staging network; do not directly publish it to the internet. Use approved HTTPS termination if network policy requires encrypted transport.
 
 Before a fresh install, verify that the repository audit PR has been tested and merged to `main`. A clean install has **not** been proven merely because the existing office Pi is healthy.
+
+## Hybrid video prerequisites and fresh-device acceptance
+
+The normal installer provisions `mpv`, `ffmpeg` (including `ffprobe`), and `wlrctl` alongside Chromium, labwc and the existing systemd/DBus prerequisites. Installing these packages does not enable MPV playback or change the default Chromium renderer.
+
+Before releasing hybrid playback, validate a clean supported OS image using the documented bootstrap path, without manually installing missing packages or creating service accounts. Confirm the appliance account owns the live compositor session, its private runtime directory and Wayland socket, the user systemd manager is reachable, cgroup v2 is present, and the API and timers are healthy. Discover the UID and socket at runtime; never hard-code lab UID 1001 or loosen runtime permissions. Confirm actual video decoding and display handoff on hardware, not merely `mpv --hwdec=help`. Existing-device upgrades must provision any newly required OS dependencies before disruptive changes, preserve data and settings, and retain Chromium fallback. That upgrade integration and clean-image hardware acceptance remain outstanding.
