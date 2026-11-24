@@ -66,6 +66,30 @@ class LabIntegrationTests(unittest.TestCase):
             self.assertEqual(ws.receive_json(), {"state":"clean","clean":True})
         self.factory.assert_not_called()
 
+    def test_terminal_acknowledgements_release_lock_before_send(self):
+        # A browser may open its next WebSocket as soon as it receives clean.
+        # Assert at the actual send boundary, rather than relying on timing.
+        from starlette.websockets import WebSocket
+        original = WebSocket.send_json
+        terminal_states = []
+
+        async def checked_send(ws, data, *args, **kwargs):
+            if "clean" in data and data.get("clean") is True:
+                self.assertFalse(lab._lock.locked())
+                terminal_states.append(data["state"])
+            return await original(ws, data, *args, **kwargs)
+
+        with patch.object(WebSocket, "send_json", checked_send):
+            with self.connect() as ws:
+                ws.send_json({"action":"check","token":TOKEN})
+                self.assertEqual(ws.receive_json(), {"state":"clean","clean":True})
+                with self.connect() as playback:
+                    self.start(playback)
+                    playback.send_json({"action":"stop"})
+                    self.assertEqual(playback.receive_json(), {"state":"cancelled","clean":True})
+        self.assertEqual(terminal_states, ["clean", "cancelled"])
+        self.factory.assert_called_once()
+
     def test_normal_playback_and_verified_completion(self):
         self.renderer.inspect.side_effect = ["playing", "completed"]
         with self.connect() as ws:

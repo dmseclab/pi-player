@@ -300,54 +300,61 @@ async def mpv_lab(ws: WebSocket):
             LOG.warning("Lab MPV request busy: action=%s", action)
             await ws.send_json({"state": "busy", "clean": False})
             return
+        terminal = None
         async with _lock:
             try:
                 if not await retire():
-                    await ws.send_json({"state": "quarantined", "clean": False})
-                    return
-                if action == "check":
-                    await ws.send_json({"state": "clean", "clean": True})
-                    return
-                if type(first["item_id"]) is not str or len(first["item_id"]) != 36:
-                    raise ValueError("Invalid item")
-                _renderer = LabRenderer(first["item_id"])
-                await asyncio.to_thread(_renderer.launch)
-                LOG.info("Lab MPV renderer launched")
-                await ws.send_json({"state": "starting"})
-                lease = time.monotonic() + LEASE_SECONDS
-                last_state = "starting"
-                while True:
-                    try:
-                        msg = await read_message(ws, 1)
-                        if msg == {"action": "stop"}:
-                            state = "cancelled"
+                    terminal = {"state": "quarantined", "clean": False}
+                elif action == "check":
+                    terminal = {"state": "clean", "clean": True}
+                else:
+                    if type(first["item_id"]) is not str or len(first["item_id"]) != 36:
+                        raise ValueError("Invalid item")
+                    _renderer = LabRenderer(first["item_id"])
+                    await asyncio.to_thread(_renderer.launch)
+                    LOG.info("Lab MPV renderer launched")
+                    await ws.send_json({"state": "starting"})
+                    lease = time.monotonic() + LEASE_SECONDS
+                    last_state = "starting"
+                    while True:
+                        try:
+                            msg = await read_message(ws, 1)
+                            if msg == {"action": "stop"}:
+                                state = "cancelled"
+                                break
+                            if msg != {"action": "ping"}:
+                                raise ValueError("Invalid playback message")
+                            lease = time.monotonic() + LEASE_SECONDS
+                        except asyncio.TimeoutError:
+                            pass
+                        if time.monotonic() >= lease or not authorized(ws, first["token"]):
+                            state = "fallback"
                             break
-                        if msg != {"action": "ping"}:
-                            raise ValueError("Invalid playback message")
-                        lease = time.monotonic() + LEASE_SECONDS
-                    except asyncio.TimeoutError:
-                        pass
-                    if time.monotonic() >= lease or not authorized(ws, first["token"]):
-                        state = "fallback"
-                        break
-                    state = await asyncio.to_thread(_renderer.inspect)
-                    if state not in ("starting", "playing"):
-                        break
-                    if state != last_state or state == "playing":
-                        await ws.send_json({"state": state})
-                    last_state = state
-                clean = await retire()
-                await ws.send_json({"state": state if clean else "quarantined", "clean": clean})
+                        state = await asyncio.to_thread(_renderer.inspect)
+                        if state not in ("starting", "playing"):
+                            break
+                        if state != last_state or state == "playing":
+                            await ws.send_json({"state": state})
+                        last_state = state
+                    clean = await retire()
+                    terminal = {"state": state if clean else "quarantined", "clean": clean}
             except WebSocketDisconnect:
                 LOG.info("Lab MPV client disconnected: action=%s", action)
             except Exception as exc:
                 reason = failure_reason(getattr(_renderer, "stage", None), exc)
                 LOG.warning("Lab MPV failed: %s", reason)
                 clean = await retire()
-                await ws.send_json({"state": "fallback" if clean else "quarantined",
-                                    "clean": clean, "reason": reason})
+                terminal = {"state": "fallback" if clean else "quarantined",
+                            "clean": clean, "reason": reason}
             finally:
-                await retire()
+                # On disconnect or cancellation, retire while still owning the lock.
+                # A completed check/retirement needs no second inventory pass.
+                if terminal is None:
+                    await retire()
+        # The client may immediately start its next request on receiving a
+        # terminal response. Release ownership before acknowledging cleanup.
+        if terminal is not None:
+            await ws.send_json(terminal)
     except (WebSocketDisconnect, asyncio.TimeoutError, ValueError, RuntimeError) as exc:
         LOG.warning("Lab MPV request ended before completion: %s", type(exc).__name__)
     finally:
