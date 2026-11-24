@@ -24,6 +24,9 @@ class CatalogVideo:
     checksum_sha256: str
     size_bytes: int
     revision: str
+    display_mode: str = 'fit'
+    muted: bool = True
+    loop: bool = False
 
 
 def _parse_date(value):
@@ -178,7 +181,9 @@ def lookup_video(conn: sqlite3.Connection, item_id: str, *,
         raise BrokerError("Invalid catalog revision metadata") from exc
     return CatalogVideo(
         record=MediaRecord(item_id, filename, revision, True, True),
-        checksum_sha256=digest, size_bytes=size, revision=revision)
+        checksum_sha256=digest, size_bytes=size, revision=revision,
+        display_mode=row['display_mode'], muted=row['video_muted'] == 1,
+        loop=row['video_loop'] != 0)
 
 
 def check_opened_media(opened, catalog: CatalogVideo) -> None:

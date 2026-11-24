@@ -14,6 +14,7 @@ from . import playback_monitor as _playback_monitor  # noqa: F401
 from . import player_info as _player_info  # noqa: F401
 from . import branding as _branding  # noqa: F401
 from .db import db, get_setting
+from . import mpv_lab_integration as _mpv_lab_integration  # noqa: F401
 
 _SETUP_ALLOWED=("/setup","/api/setup/","/api/health","/api/player/","/api/branding","/player","/static/","/favicon.ico")
 

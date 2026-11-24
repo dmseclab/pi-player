@@ -116,8 +116,25 @@ function playVideo(item,durationMs,token){
     failCurrent('Video stalled after a recovery attempt',token);
   },5000);
 }
+let mpvTransition = Promise.resolve();
 function playCurrent(){
   generation++;const token=generation;
+  if(typeof mpvLab !== 'undefined' && mpvLab.enabled()){
+    mpvLab.stop();
+    clearTimeout(timer);timer=null;
+    mpvTransition=mpvTransition.catch(()=>{}).then(async()=>{
+      if(token!==generation)return;
+      if(!await mpvLab.clean()){
+        if(token===generation){report('error','MPV cleanup unverified; retrying');timer=setTimeout(playCurrent,5000);}
+        return;
+      }
+      if(token===generation)renderCurrent(token);
+    });
+    return;
+  }
+  renderCurrent(token);
+}
+function renderCurrent(token){
   clearTimeout(timer);timer=null;if(stopPdf)stopPdf();stopPdf=null;
   cleanupCurrentVideo();clearWebsiteReload();closeDirectWindow();
   if(Date.now()<bootSplashUntil){splash(false);timer=setTimeout(playCurrent,Math.max(100,bootSplashUntil-Date.now()));return;}
@@ -137,7 +154,28 @@ function playCurrent(){
     const pdfItem={...item,asset_pdf_play_once:true};
     stopPdf=startPdfPlayback(pdfItem,stage,()=>{if(token!==generation)return;report('ready',null,1);},error=>failCurrent(error.message||'PDF rendering failed',token),()=>{if(token===generation)advance();},page=>{if(token===generation)report('progress',null,page);});return;
   }
-  if(item.asset_type==='video'){playVideo(item,durationMs,token);return;}
+  if(item.asset_type==='video'){
+    if(typeof mpvLab !== 'undefined' && mpvLab.supports(item)){
+      let started=false;
+      mpvLab.play(item,state=>{
+        if(token!==generation)return;
+        if(state==='playing'){
+          if(!started){started=true;report('ready','MPV progress and window observed');}
+          else if(Date.now()-lastProgressReport>10000){lastProgressReport=Date.now();report('progress');}
+        }
+      }).then(async result=>{
+        if(token!==generation)return;
+        const clean=result.clean===true || await mpvLab.clean();
+        if(token!==generation)return;
+        if(!clean){report('error','MPV cleanup unverified');timer=setTimeout(playCurrent,5000);return;}
+        if(result.state==='completed'){advance();return;}
+        if(result.state==='cancelled'){loadPlaylist();advanceSoon();return;}
+        report('error','MPV failed; Chromium fallback');playVideo(item,durationMs,token);
+      }).catch(()=>{if(token===generation){report('error','MPV control failure');timer=setTimeout(playCurrent,5000);}});
+      return;
+    }
+    playVideo(item,durationMs,token);return;
+  }
   if(item.asset_type==='website'){
     if(item.asset_display_mode==='direct'){
       directWindow=window.open(item.asset_url,'pi-player-direct');if(!directWindow){failCurrent('Direct website could not open',token);return;}
@@ -154,6 +192,6 @@ function playCurrent(){
 }
 function advance(){if(items.length)index=(index+1)%items.length;playCurrent();}
 function advanceSoon(){clearTimeout(timer);clearWebsiteReload();timer=setTimeout(advance,2000);}
-window.addEventListener('beforeunload',()=>{generation++;if(stopPdf)stopPdf();cleanupCurrentVideo();clearWebsiteReload();closeDirectWindow();});
+window.addEventListener('beforeunload',()=>{generation++;if(typeof mpvLab!=='undefined')mpvLab.stop();if(stopPdf)stopPdf();cleanupCurrentVideo();clearWebsiteReload();closeDirectWindow();});
 setInterval(()=>report('heartbeat'),10000);
 Promise.allSettled([loadPlayerInfo(),loadBranding()]).finally(()=>{splash(false);loadPlaylist();});setInterval(loadPlaylist,5000);

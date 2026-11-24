@@ -45,6 +45,15 @@ for entry in SingletonLock SingletonSocket SingletonCookie; do
   fi
 done
 
+# Lab-only token is root-provisioned; it is not sent in an HTTP URL.
+if [[ "$URL" == "http://127.0.0.1:8000/player" && "$(hostname -s)" == pi-player && -r /etc/pi-player/mpv-lab-token ]]; then
+  token="$(cat /etc/pi-player/mpv-lab-token)"
+  if [[ "$token" =~ ^[a-f0-9]{64}$ ]]; then
+    URL="$URL#mpv-lab=$token"
+  fi
+  unset token
+fi
+
 exec "$BROWSER" \
   --user-data-dir="$PROFILE_DIR" \
   --kiosk \
