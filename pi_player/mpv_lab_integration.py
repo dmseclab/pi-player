@@ -32,7 +32,19 @@ from .mpv_broker import BrokerError, OpenedMedia
 from .mpv_catalog import lookup_video, check_opened_media
 from .mpv_player import read_reply, renderer_arguments
 
-LOG = logging.getLogger(__name__)
+LOG = logging.getLogger('uvicorn.error')
+LAUNCH_STAGES = frozenset({'inventory', 'wayland', 'catalog', 'asset-open',
+                           'asset-checksum', 'catalog-recheck', 'ipc-directory',
+                           'spawn', 'supervision'})
+
+
+def failure_reason(stage, exc):
+    stage = stage if isinstance(stage, str) and stage in LAUNCH_STAGES else 'control'
+    kind = type(exc).__name__
+    if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,63}', kind):
+        kind = 'Error'
+    errno = getattr(exc, 'errno', None)
+    return f'{stage}:{kind}' + (f':errno={errno}' if type(errno) is int else '')
 TOKEN_PATH = Path("/etc/pi-player/mpv-lab-token")
 ORIGIN = "http://127.0.0.1:8000"
 MAX_LAB_BYTES = 64 * 1024 * 1024
@@ -118,12 +130,16 @@ class LabRenderer:
         self.last_pos = None
         self.last_progress = None
         self.progressed = False
+        self.stage = 'inventory'
 
     def launch(self):
         if any_mpv():
             raise RuntimeError("Another MPV process exists")
+        self.stage = 'wayland'
         self.env = graphical_env()
+        self.stage = 'catalog'
         grant = eligible(self.item_id)
+        self.stage = 'asset-open'
         root = os.open(ASSET_DIR, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             fd = os.open(grant.record.filename,
@@ -136,9 +152,12 @@ class LabRenderer:
             if not stat.S_ISREG(info.st_mode):
                 raise ValueError("Not a regular asset")
             media = OpenedMedia(fd, self.item_id, grant.revision, "", info.st_ino, info.st_dev)
+            self.stage = 'asset-checksum'
             check_opened_media(media, grant)
+            self.stage = 'catalog-recheck'
             if eligible(self.item_id) != grant:
                 raise ValueError("Catalog changed")
+            self.stage = 'ipc-directory'
             self.directory = tempfile.TemporaryDirectory(prefix="pi-player-mpv-",
                                                           dir=self.env["XDG_RUNTIME_DIR"])
             self.ipc = Path(self.directory.name) / "control.sock"
@@ -150,12 +169,14 @@ class LabRenderer:
                     "--wayland-app-id=" + self.app_id,
                     "--input-ipc-server=" + str(self.ipc), "--",
                     "/proc/self/fd/" + str(fd)]
+            self.stage = 'spawn'
             self.proc = subprocess.Popen(args, env=self.env, pass_fds=(fd,),
                                          close_fds=True, start_new_session=True,
                                          stdin=subprocess.DEVNULL,
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.grant = grant
             self.started = time.monotonic()
+            self.stage = 'supervision'
         finally:
             os.close(fd)
 
@@ -168,6 +189,8 @@ class LabRenderer:
 
     def inspect(self):
         if self.proc is None or self.proc.poll() is not None:
+            LOG.warning("Lab MPV child exited before completion: code=%s",
+                        None if self.proc is None else self.proc.returncode)
             return "fallback"
         try:
             if eligible(self.item_id) != self.grant:
@@ -307,9 +330,11 @@ async def mpv_lab(ws: WebSocket):
             except WebSocketDisconnect:
                 pass
             except Exception as exc:
-                LOG.warning("Lab MPV failed: %s", type(exc).__name__)
+                reason = failure_reason(getattr(_renderer, "stage", None), exc)
+                LOG.warning("Lab MPV failed: %s", reason)
                 clean = await retire()
-                await ws.send_json({"state": "fallback" if clean else "quarantined", "clean": clean})
+                await ws.send_json({"state": "fallback" if clean else "quarantined",
+                                    "clean": clean, "reason": reason})
             finally:
                 await retire()
     except (WebSocketDisconnect, asyncio.TimeoutError, ValueError, RuntimeError):

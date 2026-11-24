@@ -172,7 +172,8 @@ function renderCurrent(token){
         if(!clean){report('error','MPV cleanup unverified');timer=setTimeout(playCurrent,5000);return;}
         if(result.state==='completed'){advance();return;}
         if(result.state==='cancelled'){await loadPlaylist();if(token===generation)advanceSoon();return;}
-        report('error','MPV failed; Chromium fallback');playVideo(item,durationMs,token);
+        const reason=typeof result.reason==='string'&&/^[A-Za-z0-9_:=\-]{1,120}$/.test(result.reason)?` (${result.reason})`:'';
+        report('error',`MPV failed${reason}; Chromium fallback`);playVideo(item,durationMs,token);
       }).catch(()=>{if(token===generation){report('error','MPV control failure');timer=setTimeout(playCurrent,5000);}});
       return;
     }

@@ -95,10 +95,12 @@ class LabIntegrationTests(unittest.TestCase):
         self.factory.assert_called_once()
 
     def test_launch_failure_falls_back_only_after_cleanup(self):
-        self.renderer.launch.side_effect = OSError("fixture")
+        self.renderer.stage = "spawn"
+        self.renderer.launch.side_effect = OSError(13, "fixture secret must not be returned")
         with self.connect() as ws:
             ws.send_json({"action":"start","token":TOKEN,"item_id":ITEM})
-            self.assertEqual(ws.receive_json(), {"state":"fallback","clean":True})
+            self.assertEqual(ws.receive_json(), {"state":"fallback","clean":True,
+                                                  "reason":"spawn:PermissionError:errno=13"})
         self.renderer.retire.assert_called()
 
 
