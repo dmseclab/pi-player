@@ -66,6 +66,9 @@ if [[ ${1:-} == --rollback ]]; then
   [[ "$snapshot" == "$BACKUP_ROOT/"* && -f "$snapshot/complete" ]] || { echo 'Use a completed snapshot under the backup directory' >&2; exit 1; }
 else
   [[ -z ${1:-} ]] || { echo 'Usage: update.sh [--rollback /var/backups/pi-player/snapshot]' >&2; exit 1; }
+  # Provision additive OS dependencies before stopping playback. Rollbacks
+  # intentionally retain these packages; they do not activate MPV.
+  bash "$SOURCE_DIR/deploy/video-dependencies.sh"
   # Download before downtime. Inherited proxy/pip settings apply here.
   "$APP_DIR/.venv/bin/python" -m pip download --disable-pip-version-check -r "$SOURCE_DIR/requirements.txt" -d "$work/wheels"
   for folder in pi_player static deploy; do [[ -d "$SOURCE_DIR/$folder" ]] || exit 1; done

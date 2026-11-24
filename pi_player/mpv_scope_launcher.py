@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .mpv_fd_transport import ReceivedVideo
+from .mpv_player import renderer_arguments
 from .mpv_process_evidence import GroupEvidence, inspect_cgroup
 
 
@@ -71,12 +72,8 @@ class ScopedMpvLauncher:
             raise ScopeError("Invalid MPV options")
         return [
             systemd_run, "--user", "--scope", "--collect", f"--unit={unit}",
-            "--", mpv_binary, "--no-config", "--no-terminal",
-            "--profile=fast", "--vo=gpu", "--gpu-api=opengl",
-            "--gpu-context=wayland", "--hwdec=no", "--keep-open=no",
-            "--fullscreen=yes", f"--wayland-app-id={unit[:-6]}",
-            "--mute=yes" if muted else "--mute=no",
-            "--loop-file=inf" if loop else "--loop-file=no",
+            "--", mpv_binary, *renderer_arguments(muted=muted, loop=loop),
+            f"--wayland-app-id={unit[:-6]}",
             "--", f"/proc/self/fd/{fd}",
         ]
 

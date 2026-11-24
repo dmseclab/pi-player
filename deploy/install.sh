@@ -4,7 +4,8 @@ APP_DIR="/opt/pi-player-rk"; DATA_DIR="/var/lib/pi-player"; LOG_DIR="/var/log/pi
 [[ "$(id -u)" -eq 0 ]] || { echo "Run this installer with sudo."; exit 1; }
 if ! id "$APP_USER" >/dev/null 2>&1; then [[ "$APPLIANCE" == "1" ]] && useradd -m -s /bin/bash -G video,input,render "$APP_USER" || { echo "User '$APP_USER' does not exist." >&2; exit 1; }; fi
 export DEBIAN_FRONTEND=noninteractive
-apt-get update; apt-get install -y git ca-certificates curl python3 python3-venv python3-pip logrotate rsync chromium labwc seatd dbus-user-session xwayland openssh-server sudo network-manager mpv ffmpeg wlrctl
+apt-get update; apt-get install -y git ca-certificates curl python3 python3-venv python3-pip logrotate rsync chromium labwc seatd dbus-user-session xwayland openssh-server sudo network-manager
+bash "$(dirname "$0")/video-dependencies.sh" --lists-ready
 systemctl enable --now ssh seatd
 mkdir -p "$APP_DIR" "$DATA_DIR/assets" "$DATA_DIR/tmp" "$LOG_DIR" /etc/pi-player
 rsync -a --delete --exclude ".git" --exclude ".venv" --exclude "data" --exclude "*.tar.gz" ./ "$APP_DIR"/

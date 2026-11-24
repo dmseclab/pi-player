@@ -73,6 +73,19 @@ def read_reply(ipc: Path, command: list, *, deadline_seconds: float = 1.0) -> di
     raise OSError("No matching MPV IPC response before deadline")
 
 
+def renderer_arguments(*, muted: bool, loop: bool) -> list[str]:
+    """Single tested software-first profile; silent media avoids audio setup."""
+    if type(muted) is not bool or type(loop) is not bool:
+        raise ValueError("Invalid trusted MPV options")
+    return [
+        "--no-config", "--no-terminal", "--profile=fast",
+        "--vo=gpu", "--gpu-api=opengl", "--gpu-context=wayland",
+        "--hwdec=no", "--keep-open=no", "--fullscreen=yes",
+        "--audio=no" if muted else "--mute=no",
+        "--loop-file=inf" if loop else "--loop-file=no",
+    ]
+
+
 class MpvPlayer:
     """At most one child per instance; the future kiosk agent must own one instance."""
 
@@ -163,13 +176,8 @@ class MpvPlayer:
         ipc_dir = tempfile.TemporaryDirectory(prefix="pi-player-mpv-", dir=runtime)
         ipc = Path(ipc_dir.name) / "control.sock"
         args = [
-            self.mpv_binary, "--no-config", "--no-terminal",
-            "--profile=fast", "--vo=gpu", "--gpu-api=opengl",
-            "--gpu-context=wayland", "--hwdec=no", "--keep-open=no",
-            "--fullscreen=yes",
+            self.mpv_binary, *renderer_arguments(muted=muted, loop=loop),
             f"--input-ipc-server={ipc}",
-            "--mute=yes" if muted else "--mute=no",
-            "--loop-file=inf" if loop else "--loop-file=no",
             "--", str(video),
         ]
         try:
