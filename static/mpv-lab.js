@@ -44,7 +44,8 @@ const mpvLab = (() => {
           arm(); onState?.(data.state);
         } else finish(data);
       };
-      ws.onerror = ws.onclose = () => finish({state:'unknown',clean:false});
+      ws.onerror = () => finish({state:'unknown',clean:false,reason:'websocket-error'});
+      ws.onclose = event => finish({state:'unknown',clean:false,reason:`websocket-close:${event.code}`});
     });
   }
   return {

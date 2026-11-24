@@ -278,7 +278,13 @@ async def mpv_lab(ws: WebSocket):
     await ws.accept()
     try:
         first = await read_message(ws, 3)
+        action_label = first.get("action")
+        action_label = action_label if action_label in ("start", "check") else "invalid"
         if not authorized(ws, first.get("token")):
+            LOG.warning("Lab MPV request rejected: action=%s host_match=%s token_match=%s",
+                        action_label, ws.headers.get("host") == "127.0.0.1:8000",
+                        isinstance(first.get("token"), str) and hmac.compare_digest(
+                            (lab_token() or "").encode(), first["token"].encode()))
             await ws.close(code=1008)
             return
         action = first.get("action")
@@ -287,7 +293,11 @@ async def mpv_lab(ws: WebSocket):
         if set(first) != ({"action", "token", "item_id"} if action == "start"
                           else {"action", "token"}):
             raise ValueError("Invalid fields")
+        if action == "start":
+            item = first.get("item_id")
+            LOG.info("Lab MPV start request: item=%s", item if isinstance(item, str) and re.fullmatch(r"[0-9a-f-]{36}", item) else "invalid")
         if _lock.locked():
+            LOG.warning("Lab MPV request busy: action=%s", action)
             await ws.send_json({"state": "busy", "clean": False})
             return
         async with _lock:
@@ -302,6 +312,7 @@ async def mpv_lab(ws: WebSocket):
                     raise ValueError("Invalid item")
                 _renderer = LabRenderer(first["item_id"])
                 await asyncio.to_thread(_renderer.launch)
+                LOG.info("Lab MPV renderer launched")
                 await ws.send_json({"state": "starting"})
                 lease = time.monotonic() + LEASE_SECONDS
                 last_state = "starting"
@@ -328,7 +339,7 @@ async def mpv_lab(ws: WebSocket):
                 clean = await retire()
                 await ws.send_json({"state": state if clean else "quarantined", "clean": clean})
             except WebSocketDisconnect:
-                pass
+                LOG.info("Lab MPV client disconnected: action=%s", action)
             except Exception as exc:
                 reason = failure_reason(getattr(_renderer, "stage", None), exc)
                 LOG.warning("Lab MPV failed: %s", reason)
@@ -337,8 +348,8 @@ async def mpv_lab(ws: WebSocket):
                                     "clean": clean, "reason": reason})
             finally:
                 await retire()
-    except (WebSocketDisconnect, asyncio.TimeoutError, ValueError, RuntimeError):
-        pass
+    except (WebSocketDisconnect, asyncio.TimeoutError, ValueError, RuntimeError) as exc:
+        LOG.warning("Lab MPV request ended before completion: %s", type(exc).__name__)
     finally:
         try:
             await ws.close()
